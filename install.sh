@@ -58,9 +58,9 @@ case "$(uname -m)" in
   *) printf 'install.sh: unsupported architecture: %s\n' "$(uname -m)" >&2; exit 1 ;;
 esac
 
-if [ "$version" = "@PLUGMAN_VERSION@" ]; then
-  version=""
-fi
+case "$version" in
+  @*) version="" ;;
+esac
 if [ -z "$version" ]; then
   version=$(curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 1 --output /dev/null --write-out '%{url_effective}' "$repository/releases/latest")
   version=${version%/}

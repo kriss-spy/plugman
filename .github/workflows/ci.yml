@@ -54,7 +54,9 @@ jobs:
         shell: pwsh
         run: |
           $installDir = Join-Path $env:RUNNER_TEMP "plugman-installer-test"
-          ./install.ps1 -Version v0.1.2 -InstallDir $installDir -NoModifyPath
+          $packagedInstaller = Join-Path $env:RUNNER_TEMP "install.ps1"
+          (Get-Content -LiteralPath ./install.ps1 -Raw).Replace("@PLUGMAN_VERSION@", "v0.1.2") | Set-Content -LiteralPath $packagedInstaller
+          & $packagedInstaller -InstallDir $installDir -NoModifyPath
           $installedVersion = & (Join-Path $installDir "plugman.exe") --version
           if ($installedVersion -ne "v0.1.2") {
             throw "Installed version was '$installedVersion', expected 'v0.1.2'."

@@ -72,6 +72,27 @@ func TestUnixInstallerRejectsChecksumMismatchWithoutReplacingBinary(t *testing.T
 	}
 }
 
+func TestReleaseBoundUnixInstallerDoesNotResolveLatest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX installer")
+	}
+	home, fixtures, fakeBin := unixInstallerFixture(t, false)
+	source, err := os.ReadFile(filepath.Join(projectRoot(t), "install.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	packagedPath := filepath.Join(t.TempDir(), "install.sh")
+	packaged := strings.ReplaceAll(string(source), "@PLUGMAN_VERSION@", "v9.8.7")
+	if err := os.WriteFile(packagedPath, []byte(packaged), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("sh", packagedPath)
+	command.Env = append(installerEnv(home, fixtures, fakeBin), "PLUGMAN_FAIL_LATEST=1")
+	if output, runErr := command.CombinedOutput(); runErr != nil {
+		t.Fatalf("release-bound install.sh resolved latest: %v\n%s", runErr, output)
+	}
+}
+
 func unixInstallerFixture(t *testing.T, badChecksum bool) (string, string, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -113,7 +134,10 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$url" in
-  */releases/latest) printf '%s' 'https://github.com/kriss-spy/plugman/releases/tag/v9.8.7' ;;
+  */releases/latest)
+    [ -z "${PLUGMAN_FAIL_LATEST:-}" ] || exit 88
+    printf '%s' 'https://github.com/kriss-spy/plugman/releases/tag/v9.8.7'
+    ;;
   */checksums.txt) cp "$PLUGMAN_TEST_FIXTURES/checksums.txt" "$output" ;;
   *) cp "$PLUGMAN_TEST_FIXTURES/${url##*/}" "$output" ;;
 esac

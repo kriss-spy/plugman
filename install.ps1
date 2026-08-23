@@ -44,7 +44,7 @@ function Get-PlugmanArchitecture {
 function Resolve-PlugmanVersion {
     param([string] $RequestedVersion)
 
-    if ($RequestedVersion -eq "@PLUGMAN_VERSION@") {
+    if ($RequestedVersion.StartsWith("@")) {
         $RequestedVersion = "latest"
     }
     if ($RequestedVersion -ne "latest") {
