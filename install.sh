@@ -18,7 +18,7 @@ EOF
 }
 
 download() {
-  curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 1 "$@"
+  curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 60 --retry 3 --retry-all-errors --retry-delay 1 "$@"
 }
 
 while [ "$#" -gt 0 ]; do

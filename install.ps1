@@ -102,6 +102,26 @@ function Get-ExpectedChecksum {
     return $matchingHashes[0]
 }
 
+function Save-ReleaseFile {
+    param(
+        [string] $Uri,
+        [string] $Destination
+    )
+
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            Invoke-WebRequest -Uri $Uri -OutFile $Destination -Headers @{ "User-Agent" = $userAgent } -UseBasicParsing
+            return
+        }
+        catch {
+            if ($attempt -eq 3) {
+                throw
+            }
+            Start-Sleep -Seconds $attempt
+        }
+    }
+}
+
 function Add-UserPathEntry {
     param([string] $Directory)
 
@@ -151,6 +171,9 @@ function Assert-NotInsideVault {
 
     $current = [System.IO.DirectoryInfo]::new($Directory)
     while ($null -ne $current) {
+        if ($current.Exists -and ($current.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            throw "Refusing installer path containing link or junction '$($current.FullName)'."
+        }
         if ([System.IO.Directory]::Exists((Join-Path $current.FullName ".obsidian"))) {
             throw "Refusing to install inside Obsidian Vault '$($current.FullName)'."
         }
@@ -190,8 +213,8 @@ try {
 
         Write-Host "Downloading Plugman $resolvedVersion for Windows $architecture..."
         try {
-            Invoke-WebRequest -Uri "$releaseBaseUrl/$artifactName" -OutFile $artifactPath -Headers @{ "User-Agent" = $userAgent } -UseBasicParsing
-            Invoke-WebRequest -Uri "$releaseBaseUrl/checksums.txt" -OutFile $checksumPath -Headers @{ "User-Agent" = $userAgent } -UseBasicParsing
+            Save-ReleaseFile "$releaseBaseUrl/$artifactName" $artifactPath
+            Save-ReleaseFile "$releaseBaseUrl/checksums.txt" $checksumPath
         }
         catch {
             throw "Could not download Plugman $resolvedVersion: $($_.Exception.Message)"
@@ -204,6 +227,7 @@ try {
         }
 
         New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+        Assert-NotInsideVault $InstallDir
         $destination = Join-Path $InstallDir "plugman.exe"
         $stagedDestination = Join-Path $InstallDir (".plugman-" + [Guid]::NewGuid().ToString("N") + ".exe")
         $backupDestination = Join-Path $InstallDir (".plugman-backup-" + [Guid]::NewGuid().ToString("N") + ".exe")

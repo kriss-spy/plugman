@@ -61,3 +61,11 @@ jobs:
           if ($installedVersion -ne "v0.1.2") {
             throw "Installed version was '$installedVersion', expected 'v0.1.2'."
           }
+          & pwsh -NoProfile -File $packagedInstaller -Version v0.0.0 -InstallDir $installDir -NoModifyPath
+          if ($LASTEXITCODE -eq 0) {
+            throw "Missing release unexpectedly installed."
+          }
+          $preservedVersion = & (Join-Path $installDir "plugman.exe") --version
+          if ($preservedVersion -ne "v0.1.2") {
+            throw "Failed preflight replaced existing version with '$preservedVersion'."
+          }
