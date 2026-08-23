@@ -159,6 +159,23 @@ func TestHelpCommandPrintsHelpAndSucceeds(t *testing.T) {
 	}
 }
 
+func TestResolvedVersionSupportsReleaseBuildsAndGoInstall(t *testing.T) {
+	tests := []struct {
+		name, linked, module, want string
+	}{
+		{name: "release build", linked: "v1.2.3", module: "v9.9.9", want: "v1.2.3"},
+		{name: "go install", linked: "dev", module: "v1.2.3", want: "v1.2.3"},
+		{name: "local build", linked: "dev", module: "(devel)", want: "dev"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := resolvedVersion(test.linked, test.module); got != test.want {
+				t.Fatalf("resolvedVersion(%q, %q) = %q, want %q", test.linked, test.module, got, test.want)
+			}
+		})
+	}
+}
+
 func TestSubcommandHelpPrintsUsageAndSucceeds(t *testing.T) {
 	commands := []string{"install", "update", "uninstall", "list", "outdated", "info", "export"}
 	for _, command := range commands {

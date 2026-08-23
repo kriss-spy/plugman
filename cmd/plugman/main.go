@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -45,7 +46,11 @@ func runCommand(args []string, vaultRoot string, stdin io.Reader, stdout, stderr
 		return 0
 	}
 	if args[0] == "--version" {
-		fmt.Fprintln(stdout, version)
+		moduleVersion := ""
+		if buildInfo, ok := debug.ReadBuildInfo(); ok {
+			moduleVersion = buildInfo.Main.Version
+		}
+		fmt.Fprintln(stdout, resolvedVersion(version, moduleVersion))
 		return 0
 	}
 	if args[0] == "info" {
@@ -101,6 +106,16 @@ func runCommand(args []string, vaultRoot string, stdin io.Reader, stdout, stderr
 		return 1
 	}
 	return 0
+}
+
+func resolvedVersion(linked, module string) string {
+	if linked != "" && linked != "dev" {
+		return linked
+	}
+	if module != "" && module != "(devel)" {
+		return module
+	}
+	return linked
 }
 
 func runInstall(args []string, vaultRoot string, stdout, stderr io.Writer) int {

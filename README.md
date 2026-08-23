@@ -4,6 +4,27 @@ Plugman is a standalone, vault-local package manager for Obsidian community plug
 
 The CLI is implemented in Go and targets Linux, macOS, and Windows desktop.
 
+## Install
+
+Install once for your user account; the executable does not belong in a Vault.
+
+macOS or Linux:
+
+```sh
+curl -fsSL https://github.com/kriss-spy/plugman/releases/latest/download/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://github.com/kriss-spy/plugman/releases/latest/download/install.ps1 | iex
+```
+
+Both installers select the correct CPU architecture, verify the release
+checksum, install without administrator access, and add Plugman to the user
+`PATH`. Open a new terminal afterward. Developers with Go installed may instead
+run `go install github.com/kriss-spy/plugman/cmd/plugman@latest`.
+
 ## Use
 
 Run Plugman from the root of the Vault you want to manage:
@@ -50,8 +71,9 @@ sha256sum "dist/plugman_${VERSION}_linux_amd64"
 
 Set `GOOS` to `darwin` or `windows` and `GOARCH` to `amd64` or `arm64` for
 the other release targets; Windows artifacts use an `.exe` suffix. Pushing a
-`v*` tag runs the same build matrix, generates `checksums.txt`, and creates the
-GitHub Release. Do not reuse or move a published tag.
+`v*` tag runs the same build matrix, packages version-bound installers,
+generates `checksums.txt`, and creates the GitHub Release. Do not reuse or move
+a published tag.
 
 - [Current product specification](docs/product-spec.md)
 - [Architecture](docs/architecture.md)

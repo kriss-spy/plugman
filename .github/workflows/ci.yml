@@ -49,3 +49,13 @@ jobs:
         run: go test -race ./...
       - name: Build CLI
         run: go build ./cmd/plugman
+      - name: Test Windows user installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP "plugman-installer-test"
+          ./install.ps1 -Version v0.1.2 -InstallDir $installDir -NoModifyPath
+          $installedVersion = & (Join-Path $installDir "plugman.exe") --version
+          if ($installedVersion -ne "v0.1.2") {
+            throw "Installed version was '$installedVersion', expected 'v0.1.2'."
+          }
