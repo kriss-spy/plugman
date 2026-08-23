@@ -192,6 +192,8 @@ The operation lock protects Plugman from another Plugman process. It does not cl
 
 The official registry and GitHub are true external dependencies. Production uses HTTP adapters; tests use deterministic local adapters.
 
+- Read-only official status uses registry and manifest metadata without install-grade GitHub API or release-asset validation. Mutations retain the stricter resolver.
+- Status checks use bounded concurrency and preserve deterministic report order; all production HTTP clients have finite deadlines.
 - Conditional requests and bounded parallel downloads are internal optimizations.
 - GitHub rate limits and transport failures remain preflight failures.
 - Cached metadata may improve availability but cannot turn an unknown or stale release into a valid target.

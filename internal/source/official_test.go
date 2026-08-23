@@ -239,6 +239,37 @@ func TestOfficialResolverRecognizeCachesRegistryWithoutRepositoryRequests(t *tes
 	}
 }
 
+func TestOfficialResolverInspectsReleaseWithoutGitHubAPIRequests(t *testing.T) {
+	t.Parallel()
+
+	doer := &recordingDoer{responses: map[string]fakeResponse{
+		officialRegistryURL: {body: `[{"id":"example","repo":"acme/example"}]`},
+		"https://raw.test/acme/example/HEAD/manifest.json":  {body: `{"id":"example","name":"Example","author":"A","description":"D","version":"2.0.0","minAppVersion":"2.0.0"}`},
+		"https://raw.test/acme/example/HEAD/versions.json":  {body: `{"1.5.0":"1.7.0","2.0.0":"2.0.0"}`},
+		"https://raw.test/acme/example/1.5.0/manifest.json": {body: `{"id":"example","name":"Example","author":"A","description":"D","version":"1.5.0","minAppVersion":"1.7.0","isDesktopOnly":true}`},
+	}}
+
+	release, err := newOfficialTestResolver(doer).Inspect(context.Background(), "example", Target{ObsidianVersion: "1.8.0"})
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+	if release.PluginID != "example" || release.Repository != "acme/example" || release.Version != "1.5.0" || release.MinimumObsidianVersion != "1.7.0" || !release.DesktopOnly {
+		t.Fatalf("release = %#v", release)
+	}
+	if release.ReleaseURL != "https://github.com/acme/example/releases/tag/1.5.0" || release.ReleaseManifest.Name != "Example" {
+		t.Fatalf("release metadata = %#v", release)
+	}
+	wantRequests := []string{
+		officialRegistryURL,
+		"https://raw.test/acme/example/HEAD/manifest.json",
+		"https://raw.test/acme/example/HEAD/versions.json",
+		"https://raw.test/acme/example/1.5.0/manifest.json",
+	}
+	if !reflect.DeepEqual(doer.requests, wantRequests) {
+		t.Fatalf("requests = %#v, want no GitHub API or release-asset requests: %#v", doer.requests, wantRequests)
+	}
+}
+
 func TestOfficialResolverExactSkipsRootAndVerifiesOfficialIdentity(t *testing.T) {
 	t.Parallel()
 

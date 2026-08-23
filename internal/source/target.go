@@ -19,7 +19,7 @@ type ObsidianVersionProvider struct {
 
 func NewObsidianVersionProvider(client HTTPDoer, endpoint string) *ObsidianVersionProvider {
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultHTTPClient(DefaultGitHubAPIBaseURL)
 	}
 	if endpoint == "" {
 		endpoint = DefaultDesktopReleasesURL

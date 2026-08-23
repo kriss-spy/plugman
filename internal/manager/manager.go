@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	"github.com/kriss-spy/plugman/internal/change"
 	plugininput "github.com/kriss-spy/plugman/internal/input"
@@ -40,6 +41,12 @@ type OfficialResolver interface {
 	Resolve(context.Context, string, source.Target) (source.Release, error)
 	Lookup(context.Context, string) (source.OfficialPlugin, error)
 	ResolveExact(context.Context, source.OfficialPlugin, string, source.Target) (source.Release, error)
+}
+
+// OfficialInspector resolves metadata for read-only commands without the
+// install-grade GitHub API and release-asset checks.
+type OfficialInspector interface {
+	Inspect(context.Context, string, source.Target) (source.Release, error)
 }
 
 // OfficialRecognizer checks directory membership without release selection.
@@ -251,22 +258,30 @@ func preflightReport(report model.Report, plugins []model.PluginObservation, err
 
 func (m *manager) outdated(ctx context.Context, plugins []model.PluginObservation, options model.OutdatedOptions) (model.Report, error) {
 	hasCheckable := false
+	firstPluginID := ""
 	for _, plugin := range plugins {
 		if plugin.Status == model.PluginValid && plugin.ID != nil && plugin.Version != nil && plugin.Enabled != nil {
 			hasCheckable = true
+			firstPluginID = *plugin.ID
 			break
 		}
 	}
 	if !hasCheckable {
 		return model.Report{SchemaVersion: 1, Plugins: plugins, Outdated: []model.OutdatedPlugin{}}, nil
 	}
-	targetVersion, err := m.compatibilityTarget(ctx, options.ObsidianVersion)
+	var targetVersion string
+	var err error
+	var registryFailure error
+	if options.ObsidianVersion == "" {
+		targetVersion, err, registryFailure = m.targetAndWarmOfficial(ctx, firstPluginID)
+	} else {
+		targetVersion = options.ObsidianVersion
+	}
 	if err != nil {
 		return model.Report{}, err
 	}
 	resolver := &statusResolver{manager: m, target: source.Target{ObsidianVersion: targetVersion}, cached: make(map[string]statusResolution)}
 	installed := make([]status.Installed, 0, len(plugins))
-	var registryFailure error
 	for _, plugin := range plugins {
 		if plugin.Status != model.PluginValid || plugin.ID == nil || plugin.Version == nil || plugin.Enabled == nil {
 			continue
@@ -312,19 +327,24 @@ type statusResolver struct {
 	manager *manager
 	target  source.Target
 	cached  map[string]statusResolution
+	mu      sync.Mutex
 }
 
 func (r *statusResolver) ResolveLatest(ctx context.Context, plugin status.Installed) (status.Release, error) {
+	r.mu.Lock()
 	resolved, ok := r.cached[plugin.ID]
+	r.mu.Unlock()
 	if !ok {
 		if plugin.Source.Kind == status.SourceGitHub {
 			release, _, err := r.manager.github.Resolve(ctx, plugin.Source.Repository, r.target)
 			resolved = statusResolution{release: release, err: err}
 		} else {
-			release, err := r.manager.official.Resolve(ctx, plugin.ID, r.target)
+			release, err := r.manager.inspectOfficial(ctx, plugin.ID, r.target)
 			resolved = statusResolution{release: release, err: err}
 		}
+		r.mu.Lock()
 		r.cached[plugin.ID] = resolved
+		r.mu.Unlock()
 	}
 	if resolved.err != nil {
 		return status.Release{}, statusError(resolved.err)
@@ -520,6 +540,25 @@ func (m *manager) compatibilityTarget(ctx context.Context, value string) (string
 		return value, nil
 	}
 	return m.target.Latest(ctx)
+}
+
+func (m *manager) targetAndWarmOfficial(ctx context.Context, id string) (string, error, error) {
+	type targetResult struct {
+		version string
+		err     error
+	}
+	targetDone := make(chan targetResult, 1)
+	warmDone := make(chan error, 1)
+	go func() {
+		version, err := m.target.Latest(ctx)
+		targetDone <- targetResult{version: version, err: err}
+	}()
+	go func() {
+		_, err := m.recognizer.Recognize(ctx, id)
+		warmDone <- err
+	}()
+	target := <-targetDone
+	return target.version, target.err, <-warmDone
 }
 
 func officialNotFound(err error) bool {
@@ -865,12 +904,20 @@ func (m *manager) info(ctx context.Context, plugins []model.PluginObservation, o
 		return model.Report{}, fmt.Errorf("info requires exactly one Plugin Input")
 	}
 	if options.ObsidianVersion == "" {
-		options.ObsidianVersion, err = m.target.Latest(ctx)
+		if declarations[0].Kind == plugininput.Official {
+			var warmErr error
+			options.ObsidianVersion, err, warmErr = m.targetAndWarmOfficial(ctx, declarations[0].ID)
+			if err == nil {
+				err = warmErr
+			}
+		} else {
+			options.ObsidianVersion, err = m.target.Latest(ctx)
+		}
 		if err != nil {
 			return model.Report{}, err
 		}
 	}
-	release, pluginSource, err := m.resolveDeclaration(ctx, declarations[0], options.ObsidianVersion)
+	release, pluginSource, err := m.resolveInfoDeclaration(ctx, declarations[0], options.ObsidianVersion)
 	if err != nil {
 		return model.Report{}, err
 	}
@@ -933,4 +980,24 @@ func (m *manager) resolveDeclaration(ctx context.Context, declaration plugininpu
 	}
 	releaseValue := provenance.Release
 	return release, model.PluginSource{Kind: model.SourceGitHub, Repository: &provenance.Repository, Release: &releaseValue}, nil
+}
+
+func (m *manager) resolveInfoDeclaration(ctx context.Context, declaration plugininput.Declaration, obsidianVersion string) (source.Release, model.PluginSource, error) {
+	if declaration.Kind != plugininput.Official || declaration.Version != "" {
+		return m.resolveDeclaration(ctx, declaration, obsidianVersion)
+	}
+	release, err := m.inspectOfficial(ctx, declaration.ID, source.Target{ObsidianVersion: obsidianVersion})
+	if err != nil {
+		return source.Release{}, model.PluginSource{}, err
+	}
+	repository := "https://github.com/" + release.Repository
+	releaseURL := release.ReleaseURL
+	return release, model.PluginSource{Kind: model.SourceOfficial, Repository: &repository, Release: &releaseURL}, nil
+}
+
+func (m *manager) inspectOfficial(ctx context.Context, id string, target source.Target) (source.Release, error) {
+	if inspector, ok := m.official.(OfficialInspector); ok {
+		return inspector.Inspect(ctx, id, target)
+	}
+	return m.official.Resolve(ctx, id, target)
 }

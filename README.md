@@ -21,6 +21,10 @@ release URLs. New plugins are disabled unless `--enable` is passed. When
 Obsidian is open, its CLI must be installed and enabled so Plugman can safely
 quiesce and reload plugins; closed-Vault operations do not require it.
 
+`info` and `outdated` use bounded read-only metadata checks. Set `GH_TOKEN` (or
+`GITHUB_TOKEN`) when resolving GitHub-only repositories to use authenticated
+GitHub API limits; Plugman never writes or prints the token.
+
 ## Build locally
 
 Use the Go version declared in `go.mod`. A normal development build is:

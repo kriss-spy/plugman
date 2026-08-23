@@ -105,6 +105,57 @@ func TestInfoCombinesOfficialReleaseAndInstalledState(t *testing.T) {
 	}
 }
 
+func TestInfoUsesReadOnlyOfficialInspection(t *testing.T) {
+	vaultRoot := newVault(t)
+	base := &fakeOfficialResolver{release: officialRelease("example", "2.0.0")}
+	resolver := &inspectingOfficialResolver{fakeOfficialResolver: base}
+
+	report, err := manager.NewWithConfig(vaultRoot, manager.Config{Official: resolver}).Run(context.Background(), model.Operation{
+		Kind: model.OperationInfo,
+		Info: model.InfoOptions{Input: "example", ObsidianVersion: "1.8.0"},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if resolver.inspectCalls != 1 || base.calls != 0 {
+		t.Fatalf("inspection calls = %d, install-grade resolve calls = %d", resolver.inspectCalls, base.calls)
+	}
+	if report.Info == nil || report.Info.NewestCompatibleVersion != "2.0.0" {
+		t.Fatalf("info = %#v", report.Info)
+	}
+}
+
+func TestInfoWarmsOfficialDirectoryWhileResolvingCompatibilityTarget(t *testing.T) {
+	vaultRoot := newVault(t)
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	target := &blockingTargetVersion{started: started, release: release}
+	recognizer := &blockingRecognizer{started: started, release: release}
+	configured := manager.NewWithConfig(vaultRoot, manager.Config{
+		Official:            &fakeOfficialResolver{release: officialRelease("example", "2.0.0")},
+		OfficialRecognition: recognizer,
+		TargetVersion:       target,
+	})
+	done := make(chan error, 1)
+	go func() {
+		_, err := configured.Run(context.Background(), model.Operation{Kind: model.OperationInfo, Info: model.InfoOptions{Input: "example"}})
+		done <- err
+	}()
+
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(500 * time.Millisecond):
+			close(release)
+			t.Fatal("compatibility target and official directory loaded one-by-one")
+		}
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
 func TestInfoValidatesVaultBeforeRemoteResolution(t *testing.T) {
 	resolver := &fakeOfficialResolver{}
 	_, err := manager.NewWithConfig(t.TempDir(), manager.Config{Official: resolver}).Run(context.Background(), model.Operation{
@@ -167,6 +218,27 @@ func TestInstallDryRunComposesListsAndLeavesInstalledUnversionedPluginUnchanged(
 	}
 	if stager.dryCalls != 1 || changer.beginCalls != 0 {
 		t.Fatalf("dry-run staging calls = %d, batch calls = %d", stager.dryCalls, changer.beginCalls)
+	}
+}
+
+func TestInstallUsesInstallGradeOfficialResolution(t *testing.T) {
+	vaultRoot := newVault(t)
+	base := &fakeOfficialResolver{release: officialRelease("demo", "1.0.0")}
+	resolver := &inspectingOfficialResolver{fakeOfficialResolver: base}
+	stager := &fakeStager{t: t}
+
+	_, err := manager.NewWithConfig(vaultRoot, manager.Config{
+		Official: resolver, Stager: stager, Change: &fakeChanger{},
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
+	}).Run(context.Background(), model.Operation{
+		Kind:    model.OperationInstall,
+		Install: model.InstallOptions{Inputs: []string{"demo"}, ObsidianVersion: "1.8.0", DryRun: true},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if base.calls != 1 || resolver.inspectCalls != 0 {
+		t.Fatalf("install-grade resolve calls = %d, read-only inspection calls = %d", base.calls, resolver.inspectCalls)
 	}
 }
 
@@ -1112,6 +1184,39 @@ type fakeOfficialResolver struct {
 	calls        int
 	lookupCalls  int
 	exactCalls   int
+}
+
+type inspectingOfficialResolver struct {
+	*fakeOfficialResolver
+	inspectCalls int
+}
+
+type blockingTargetVersion struct {
+	started chan<- string
+	release <-chan struct{}
+}
+
+func (p *blockingTargetVersion) Latest(context.Context) (string, error) {
+	p.started <- "target"
+	<-p.release
+	return "1.8.0", nil
+}
+
+type blockingRecognizer struct {
+	started chan<- string
+	release <-chan struct{}
+}
+
+func (r *blockingRecognizer) Recognize(context.Context, string) (bool, error) {
+	r.started <- "directory"
+	<-r.release
+	return true, nil
+}
+
+func (r *inspectingOfficialResolver) Inspect(_ context.Context, id string, target source.Target) (source.Release, error) {
+	r.inspectCalls++
+	r.id, r.target = id, target
+	return r.release, r.err
 }
 
 func (f *fakeOfficialResolver) Resolve(_ context.Context, id string, target source.Target) (source.Release, error) {

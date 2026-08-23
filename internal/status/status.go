@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // ResolveErrorKind identifies expected negative resolution outcomes.
@@ -97,42 +98,63 @@ type Result struct {
 
 // Check resolves and classifies each plugin in the supplied deterministic order.
 func Check(ctx context.Context, plugins []Installed, resolver Resolver) []Result {
-	results := make([]Result, 0, len(plugins))
-	for _, plugin := range plugins {
-		result := Result{
-			ID: plugin.ID, CurrentVersion: plugin.Version, Enabled: plugin.Enabled, Source: plugin.Source,
-		}
-		if plugin.Source.Kind != SourceOfficial && plugin.Source.Kind != SourceGitHub {
-			result.State = UnknownSource
-			results = append(results, result)
-			continue
-		}
-		release, err := resolver.ResolveLatest(ctx, plugin)
-		if err != nil {
-			result.State = Transport
-			var resolveError *ResolveError
-			if errors.As(err, &resolveError) {
-				switch resolveError.Kind {
-				case ResolveRemoved:
-					result.State = Removed
-				case ResolveIncompatible:
-					result.State = Incompatible
-				}
-			}
-			result.Problem = err.Error()
-			results = append(results, result)
-			continue
-		}
-		result.LatestVersion = release.Version
-		result.ReleaseURL = release.URL
-		if compareVersions(release.Version, plugin.Version) > 0 {
-			result.State = Outdated
-		} else {
-			result.State = Current
-		}
-		results = append(results, result)
+	results := make([]Result, len(plugins))
+	if len(plugins) == 0 {
+		return results
 	}
+	type job struct {
+		index  int
+		plugin Installed
+	}
+	jobs := make(chan job)
+	workerCount := min(len(plugins), 6)
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for item := range jobs {
+				results[item.index] = checkOne(ctx, item.plugin, resolver)
+			}
+		}()
+	}
+	for index, plugin := range plugins {
+		jobs <- job{index: index, plugin: plugin}
+	}
+	close(jobs)
+	workers.Wait()
 	return results
+}
+
+func checkOne(ctx context.Context, plugin Installed, resolver Resolver) Result {
+	result := Result{ID: plugin.ID, CurrentVersion: plugin.Version, Enabled: plugin.Enabled, Source: plugin.Source}
+	if plugin.Source.Kind != SourceOfficial && plugin.Source.Kind != SourceGitHub {
+		result.State = UnknownSource
+		return result
+	}
+	release, err := resolver.ResolveLatest(ctx, plugin)
+	if err != nil {
+		result.State = Transport
+		var resolveError *ResolveError
+		if errors.As(err, &resolveError) {
+			switch resolveError.Kind {
+			case ResolveRemoved:
+				result.State = Removed
+			case ResolveIncompatible:
+				result.State = Incompatible
+			}
+		}
+		result.Problem = err.Error()
+		return result
+	}
+	result.LatestVersion = release.Version
+	result.ReleaseURL = release.URL
+	if compareVersions(release.Version, plugin.Version) > 0 {
+		result.State = Outdated
+	} else {
+		result.State = Current
+	}
+	return result
 }
 
 func compareVersions(left, right string) int {

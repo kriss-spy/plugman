@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"time"
 )
 
 // GitHubConfig contains the GitHub release resolver's external dependencies.
@@ -38,23 +40,51 @@ type GitHubResolver struct {
 
 // NewGitHubResolver constructs a resolver for public GitHub releases.
 func NewGitHubResolver(config GitHubConfig) *GitHubResolver {
-	client := config.Client
-	if client == nil {
-		client = defaultHTTPClient()
-	}
 	if config.APIBaseURL == "" {
 		config.APIBaseURL = DefaultGitHubAPIBaseURL
+	}
+	client := config.Client
+	if client == nil {
+		client = defaultHTTPClient(config.APIBaseURL)
 	}
 	return &GitHubResolver{client: client, apiBaseURL: strings.TrimRight(config.APIBaseURL, "/")}
 }
 
-func defaultHTTPClient() *http.Client {
-	return &http.Client{CheckRedirect: func(request *http.Request, via []*http.Request) error {
+const defaultHTTPTimeout = 15 * time.Second
+
+func defaultHTTPClient(githubAPIBaseURL string) *http.Client {
+	return &http.Client{Timeout: defaultHTTPTimeout, Transport: githubAuthTransport{
+		baseURL: strings.TrimRight(githubAPIBaseURL, "/"),
+		token:   githubToken(),
+		next:    http.DefaultTransport,
+	}, CheckRedirect: func(request *http.Request, via []*http.Request) error {
 		if len(via) == 0 || !isGitHubReleaseDownloadURL(via[0].URL) {
 			return nil
 		}
 		return ValidateReleaseAssetRedirectURL(request.URL.String())
 	}}
+}
+
+type githubAuthTransport struct {
+	baseURL string
+	token   string
+	next    http.RoundTripper
+}
+
+func (transport githubAuthTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if transport.token == "" || !strings.HasPrefix(request.URL.String(), transport.baseURL+"/") {
+		return transport.next.RoundTrip(request)
+	}
+	authenticated := request.Clone(request.Context())
+	authenticated.Header.Set("Authorization", "Bearer "+transport.token)
+	return transport.next.RoundTrip(authenticated)
+}
+
+func githubToken() string {
+	if token := strings.TrimSpace(os.Getenv("GH_TOKEN")); token != "" {
+		return token
+	}
+	return strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
 }
 
 func isGitHubReleaseDownloadURL(value *url.URL) bool {

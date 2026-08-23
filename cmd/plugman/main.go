@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/kriss-spy/plugman/internal/manager"
 	"github.com/kriss-spy/plugman/internal/model"
@@ -48,7 +49,7 @@ func runCommand(args []string, vaultRoot string, stdin io.Reader, stdout, stderr
 		return 0
 	}
 	if args[0] == "info" {
-		return runInfo(args[1:], vaultRoot, stdout, stderr)
+		return runInfo(args[1:], vaultRoot, stdout, stderr, interactive)
 	}
 	if args[0] == "install" {
 		return runInstall(args[1:], vaultRoot, stdout, stderr)
@@ -57,7 +58,7 @@ func runCommand(args []string, vaultRoot string, stdin io.Reader, stdout, stderr
 		return runUpdate(args[1:], vaultRoot, stdout, stderr)
 	}
 	if args[0] == "outdated" {
-		return runOutdated(args[1:], vaultRoot, stdout, stderr)
+		return runOutdated(args[1:], vaultRoot, stdout, stderr, interactive)
 	}
 	if args[0] == "uninstall" {
 		return runUninstall(args[1:], vaultRoot, stdin, stdout, stderr, interactive)
@@ -168,7 +169,7 @@ func runUpdate(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runOutdated(args []string, vaultRoot string, stdout, stderr io.Writer) int {
+func runOutdated(args []string, vaultRoot string, stdout, stderr io.Writer, interactive bool) int {
 	flags := flag.NewFlagSet("outdated", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	jsonOutput := flags.Bool("json", false, "emit stable JSON")
@@ -179,7 +180,12 @@ func runOutdated(args []string, vaultRoot string, stdout, stderr io.Writer) int 
 		fmt.Fprintln(stderr, "plugman outdated does not accept arguments")
 		return 2
 	}
-	result, err := manager.New(vaultRoot).Run(context.Background(), model.Operation{Kind: model.OperationOutdated})
+	if interactive {
+		fmt.Fprintln(stderr, "Checking plugin releases...")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	result, err := manager.New(vaultRoot).Run(ctx, model.Operation{Kind: model.OperationOutdated})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -278,7 +284,7 @@ func runExport(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runInfo(args []string, vaultRoot string, stdout, stderr io.Writer) int {
+func runInfo(args []string, vaultRoot string, stdout, stderr io.Writer, interactive bool) int {
 	flags := flag.NewFlagSet("info", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	jsonOutput := flags.Bool("json", false, "emit stable JSON")
@@ -289,7 +295,12 @@ func runInfo(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "plugman info requires one plugin ID or GitHub URL")
 		return 2
 	}
-	result, err := manager.New(vaultRoot).Run(context.Background(), model.Operation{
+	if interactive {
+		fmt.Fprintln(stderr, "Checking plugin metadata...")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	result, err := manager.New(vaultRoot).Run(ctx, model.Operation{
 		Kind: model.OperationInfo,
 		Info: model.InfoOptions{Input: flags.Arg(0)},
 	})

@@ -125,10 +125,6 @@ type OfficialResolver struct {
 
 // NewOfficialResolver constructs an official-directory resolver.
 func NewOfficialResolver(config OfficialConfig) *OfficialResolver {
-	client := config.Client
-	if client == nil {
-		client = defaultHTTPClient()
-	}
 	if config.RegistryURL == "" {
 		config.RegistryURL = DefaultRegistryURL
 	}
@@ -137,6 +133,10 @@ func NewOfficialResolver(config OfficialConfig) *OfficialResolver {
 	}
 	if config.GitHubAPIBaseURL == "" {
 		config.GitHubAPIBaseURL = DefaultGitHubAPIBaseURL
+	}
+	client := config.Client
+	if client == nil {
+		client = defaultHTTPClient(config.GitHubAPIBaseURL)
 	}
 	return &OfficialResolver{
 		client:           client,
@@ -331,6 +331,56 @@ func (r *OfficialResolver) Resolve(ctx context.Context, officialID string, targe
 	}, nil
 }
 
+// Inspect resolves release metadata needed by read-only commands without
+// performing GitHub API or release-asset validation. Mutating operations must
+// continue to use Resolve or ResolveExact.
+func (r *OfficialResolver) Inspect(ctx context.Context, officialID string, target Target) (Release, error) {
+	targetVersion, err := parseSemver(target.ObsidianVersion)
+	if err != nil {
+		return Release{}, malformed("validate target", "invalid Obsidian version", err)
+	}
+	entry, found, err := r.findRegistryEntry(ctx, officialID)
+	if err != nil {
+		return Release{}, err
+	}
+	if !found {
+		return Release{}, &Error{Code: ErrorOfficialPluginNotFound, Operation: "resolve official plugin", Message: fmt.Sprintf("plugin %q is not in Obsidian's community directory", officialID)}
+	}
+
+	rootManifestURL := r.rawURL(entry.Repo, "manifest.json")
+	var rootManifest Manifest
+	if err := r.getJSON(ctx, "fetch root manifest", rootManifestURL, &rootManifest); err != nil {
+		return Release{}, err
+	}
+	if err := validateRootManifest(rootManifest, officialID); err != nil {
+		return Release{}, malformed("validate root manifest", err.Error(), err)
+	}
+	selectedVersion, minimumVersion, err := r.selectCompatibleVersion(ctx, entry.Repo, rootManifest, targetVersion)
+	if err != nil {
+		return Release{}, err
+	}
+	selectedManifest := rootManifest
+	if selectedVersion.original != rootManifest.Version {
+		manifestURL := r.rawRefURL(entry.Repo, selectedVersion.original, "manifest.json")
+		if err := r.getJSON(ctx, "fetch compatible manifest", manifestURL, &selectedManifest); err != nil {
+			return Release{}, err
+		}
+	}
+	if err := validateReleaseManifest(selectedManifest, officialID, selectedVersion.original, minimumVersion.original); err != nil {
+		return Release{}, malformed("validate compatible manifest", err.Error(), err)
+	}
+	return Release{
+		PluginID:               officialID,
+		Repository:             entry.Repo,
+		Version:                selectedVersion.original,
+		MinimumObsidianVersion: minimumVersion.original,
+		DesktopOnly:            selectedManifest.IsDesktopOnly,
+		ReleaseURL:             "https://github.com/" + entry.Repo + "/releases/tag/" + url.PathEscape(selectedVersion.original),
+		RootManifest:           rootManifest,
+		ReleaseManifest:        selectedManifest,
+	}, nil
+}
+
 // ResolveExact resolves only one explicitly requested release for an identity
 // previously returned by Lookup. It does not inspect the repository root,
 // versions.json, or any other release.
@@ -363,7 +413,11 @@ func (r *OfficialResolver) ResolveExact(ctx context.Context, plugin OfficialPlug
 }
 
 func (r *OfficialResolver) rawURL(repository, filename string) string {
-	return r.rawBaseURL + "/" + repository + "/HEAD/" + filename
+	return r.rawRefURL(repository, "HEAD", filename)
+}
+
+func (r *OfficialResolver) rawRefURL(repository, ref, filename string) string {
+	return r.rawBaseURL + "/" + repository + "/" + url.PathEscape(ref) + "/" + filename
 }
 
 func (r *OfficialResolver) getJSON(ctx context.Context, operation, endpoint string, destination any) error {

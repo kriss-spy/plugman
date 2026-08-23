@@ -60,6 +60,14 @@ func TestOutdatedJSONOnEmptyVault(t *testing.T) {
 	}
 }
 
+func TestOutdatedInteractiveShowsNetworkProgress(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := runCommand([]string{"outdated"}, emptyVault(t), strings.NewReader(""), &stdout, &stderr, true)
+	if exitCode != 0 || !strings.Contains(stderr.String(), "Checking plugin releases") {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
 func TestUninstallNonInteractiveRequiresYes(t *testing.T) {
 	vault := cliVaultWithPlugin(t, "demo", true)
 	var stdout, stderr bytes.Buffer

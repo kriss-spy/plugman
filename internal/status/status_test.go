@@ -4,9 +4,43 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/kriss-spy/plugman/internal/status"
 )
+
+func TestCheckResolvesPluginsConcurrentlyAndPreservesOrder(t *testing.T) {
+	started := make(chan string, 3)
+	release := make(chan struct{})
+	resolver := resolverFunc(func(_ context.Context, plugin status.Installed) (status.Release, error) {
+		started <- plugin.ID
+		<-release
+		return status.Release{Version: "2.0.0"}, nil
+	})
+	plugins := []status.Installed{
+		{ID: "first", Version: "1.0.0", Source: status.Source{Kind: status.SourceOfficial}},
+		{ID: "second", Version: "1.0.0", Source: status.Source{Kind: status.SourceOfficial}},
+		{ID: "third", Version: "1.0.0", Source: status.Source{Kind: status.SourceOfficial}},
+	}
+	done := make(chan []status.Result, 1)
+	go func() { done <- status.Check(context.Background(), plugins, resolver) }()
+
+	for range plugins {
+		select {
+		case <-started:
+		case <-time.After(500 * time.Millisecond):
+			close(release)
+			t.Fatal("plugin checks ran one-by-one")
+		}
+	}
+	close(release)
+	got := <-done
+	for index, plugin := range plugins {
+		if got[index].ID != plugin.ID {
+			t.Fatalf("result %d ID = %q, want %q", index, got[index].ID, plugin.ID)
+		}
+	}
+}
 
 type resolverFunc func(context.Context, status.Installed) (status.Release, error)
 
