@@ -93,6 +93,46 @@ func TestReleaseBoundUnixInstallerDoesNotResolveLatest(t *testing.T) {
 	}
 }
 
+func TestUnixInstallerRefusesDestinationInsideVault(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX installer")
+	}
+	home, fixtures, fakeBin := unixInstallerFixture(t, false)
+	vaultRoot := filepath.Join(home, "vault")
+	if err := os.MkdirAll(filepath.Join(vaultRoot, ".obsidian"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installDir := filepath.Join(vaultRoot, "bin")
+	command := exec.Command("sh", "install.sh", "--version", "v9.8.7", "--bin-dir", installDir)
+	command.Dir = projectRoot(t)
+	command.Env = installerEnv(home, fixtures, fakeBin)
+	output, err := command.CombinedOutput()
+	if err == nil || !strings.Contains(string(output), "Obsidian Vault") {
+		t.Fatalf("install.sh error = %v, output = %q", err, output)
+	}
+	if _, statErr := os.Stat(filepath.Join(installDir, "plugman")); !os.IsNotExist(statErr) {
+		t.Fatalf("Vault executable exists after refusal: %v", statErr)
+	}
+}
+
+func TestUnixInstallerAddsCustomDirectoryWithSpacesToFishPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX installer")
+	}
+	home, fixtures, fakeBin := unixInstallerFixture(t, false)
+	installDir := filepath.Join(home, "custom tools", "bin")
+	command := exec.Command("sh", "install.sh", "--version", "v9.8.7", "--bin-dir", installDir)
+	command.Dir = projectRoot(t)
+	command.Env = append(installerEnv(home, fixtures, fakeBin), "SHELL=/usr/bin/fish")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("install.sh: %v\n%s", err, output)
+	}
+	profile, err := os.ReadFile(filepath.Join(home, ".config", "fish", "config.fish"))
+	if err != nil || !strings.Contains(string(profile), "fish_add_path '"+installDir+"'") {
+		t.Fatalf("fish profile = %q, %v", profile, err)
+	}
+}
+
 func unixInstallerFixture(t *testing.T, badChecksum bool) (string, string, string) {
 	t.Helper()
 	root := t.TempDir()

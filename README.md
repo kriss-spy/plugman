@@ -25,6 +25,10 @@ checksum, install without administrator access, and add Plugman to the user
 `PATH`. Open a new terminal afterward. Developers with Go installed may instead
 run `go install github.com/kriss-spy/plugman/cmd/plugman@latest`.
 
+To install without changing `PATH`, set `PLUGMAN_NO_MODIFY_PATH=1` before the
+macOS/Linux command. In PowerShell, run
+`$env:PLUGMAN_NO_MODIFY_PATH="1"` before the Windows command.
+
 ## Use
 
 Run Plugman from the root of the Vault you want to manage:

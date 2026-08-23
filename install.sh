@@ -13,7 +13,12 @@ usage() {
 Usage: install.sh [--version <version>] [--bin-dir <directory>]
 
 Installs Plugman for the current user. The latest release is used by default.
+Set PLUGMAN_NO_MODIFY_PATH=1 to leave shell profiles unchanged.
 EOF
+}
+
+download() {
+  curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 1 "$@"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -46,6 +51,22 @@ case "$install_dir" in
   *) printf 'install.sh: install directory must be absolute: %s\n' "$install_dir" >&2; exit 1 ;;
 esac
 
+directory="$install_dir"
+while [ ! -e "$directory" ]; do
+  parent=$(dirname "$directory")
+  [ "$parent" != "$directory" ] || break
+  directory=$parent
+done
+directory=$(cd "$directory" && pwd -P)
+while :; do
+  if [ -d "$directory/.obsidian" ]; then
+    printf 'install.sh: refusing to install inside Obsidian Vault: %s\n' "$directory" >&2
+    exit 1
+  fi
+  [ "$directory" = "/" ] && break
+  directory=$(dirname "$directory")
+done
+
 case "$(uname -s)" in
   Linux|linux) os="linux" ;;
   Darwin|darwin) os="darwin" ;;
@@ -62,7 +83,7 @@ case "$version" in
   @*) version="" ;;
 esac
 if [ -z "$version" ]; then
-  version=$(curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 1 --output /dev/null --write-out '%{url_effective}' "$repository/releases/latest")
+  version=$(download --output /dev/null --write-out '%{url_effective}' "$repository/releases/latest")
   version=${version%/}
   version=${version##*/}
 fi
@@ -86,8 +107,8 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 1 --output "$temporary_dir/checksums.txt" "$download_base/checksums.txt"
-curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 1 --output "$temporary_dir/$asset" "$download_base/$asset"
+download --output "$temporary_dir/checksums.txt" "$download_base/checksums.txt"
+download --output "$temporary_dir/$asset" "$download_base/$asset"
 
 expected=$(awk -v asset="$asset" '$2 == asset { print $1 }' "$temporary_dir/checksums.txt")
 [ -n "$expected" ] || { printf 'install.sh: checksum is missing for %s\n' "$asset" >&2; exit 1; }
@@ -102,6 +123,7 @@ fi
 [ "$actual" = "$expected" ] || { printf 'install.sh: checksum verification failed for %s\n' "$asset" >&2; exit 1; }
 
 mkdir -p "$install_dir"
+install_dir=$(cd "$install_dir" && pwd -P)
 destination="$install_dir/plugman"
 if [ -L "$destination" ] || { [ -e "$destination" ] && [ ! -f "$destination" ]; }; then
   printf 'install.sh: refusing to replace non-regular file: %s\n' "$destination" >&2
@@ -118,19 +140,37 @@ profile=""
 case ":${PATH}:" in
   *":${install_dir}:"*) ;;
   *)
-    if [ "$install_dir" = "${HOME}/.local/bin" ] && [ "${PLUGMAN_NO_MODIFY_PATH:-}" != "1" ]; then
+    if [ "${PLUGMAN_NO_MODIFY_PATH:-}" != "1" ]; then
+      escaped_install_dir=$(printf '%s' "$install_dir" | sed "s/'/'\\\\''/g")
       case "${SHELL:-}" in
-        */zsh) profile="${ZDOTDIR:-${HOME}}/.zshrc" ;;
+        */zsh)
+          profile="${ZDOTDIR:-${HOME}}/.zshrc"
+          path_line="export PATH='$escaped_install_dir':\"\$PATH\""
+          ;;
         */bash)
           if [ "$os" = "darwin" ]; then profile="${HOME}/.bash_profile"; else profile="${HOME}/.bashrc"; fi
+          path_line="export PATH='$escaped_install_dir':\"\$PATH\""
           ;;
-        *) profile="" ;;
+        */fish)
+          profile="${HOME}/.config/fish/config.fish"
+          path_line="fish_add_path '$escaped_install_dir'"
+          ;;
+        *)
+          profile="${HOME}/.profile"
+          path_line="export PATH='$escaped_install_dir':\"\$PATH\""
+          ;;
       esac
       marker="# Added by Plugman installer"
-      if [ -n "$profile" ] && ! grep -F "$marker" "$profile" >/dev/null 2>&1; then
-        printf '\n%s\n%s\n' "$marker" 'export PATH="$HOME/.local/bin:$PATH"' >> "$profile"
+      if ! grep -F "$path_line" "$profile" >/dev/null 2>&1; then
+        if mkdir -p "$(dirname "$profile")" && printf '\n%s\n%s\n' "$marker" "$path_line" >> "$profile"; then
+          path_updated=true
+        else
+          printf 'install.sh: warning: could not add %s to PATH in %s\n' "$install_dir" "$profile" >&2
+          profile=""
+        fi
+      else
+        path_updated=true
       fi
-      if [ -n "$profile" ]; then path_updated=true; fi
     fi
     ;;
 esac

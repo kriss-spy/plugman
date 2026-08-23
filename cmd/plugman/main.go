@@ -108,14 +108,14 @@ func runCommand(args []string, vaultRoot string, stdin io.Reader, stdout, stderr
 	return 0
 }
 
-func resolvedVersion(linked, module string) string {
-	if linked != "" && linked != "dev" {
-		return linked
+func resolvedVersion(linkedVersion, moduleVersion string) string {
+	if linkedVersion != "" && linkedVersion != "dev" {
+		return linkedVersion
 	}
-	if module != "" && module != "(devel)" {
-		return module
+	if moduleVersion != "" && moduleVersion != "(devel)" {
+		return moduleVersion
 	}
-	return linked
+	return linkedVersion
 }
 
 func runInstall(args []string, vaultRoot string, stdout, stderr io.Writer) int {

@@ -146,6 +146,18 @@ function Add-UserPathEntry {
     return -not $alreadyPresent
 }
 
+function Assert-NotInsideVault {
+    param([string] $Directory)
+
+    $current = [System.IO.DirectoryInfo]::new($Directory)
+    while ($null -ne $current) {
+        if ([System.IO.Directory]::Exists((Join-Path $current.FullName ".obsidian"))) {
+            throw "Refusing to install inside Obsidian Vault '$($current.FullName)'."
+        }
+        $current = $current.Parent
+    }
+}
+
 try {
     if ($env:OS -ne "Windows_NT") {
         throw "This installer supports Windows only."
@@ -163,6 +175,7 @@ try {
         $InstallDir = Join-Path $localAppData "Programs\plugman\bin"
     }
     $InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
+    Assert-NotInsideVault $InstallDir
 
     $resolvedVersion = Resolve-PlugmanVersion $Version
     $architecture = Get-PlugmanArchitecture
@@ -212,12 +225,19 @@ try {
             Remove-Item -LiteralPath $stagedDestination -Force -ErrorAction SilentlyContinue
         }
 
+        $skipPathUpdate = $NoModifyPath -or $env:PLUGMAN_NO_MODIFY_PATH -eq "1"
         $pathChanged = $false
-        if (-not $NoModifyPath) {
-            $pathChanged = Add-UserPathEntry $InstallDir
+        if (-not $skipPathUpdate) {
+            try {
+                $pathChanged = Add-UserPathEntry $InstallDir
+            }
+            catch {
+                $skipPathUpdate = $true
+                Write-Warning "Plugman was installed, but PATH could not be updated: $($_.Exception.Message)"
+            }
         }
         Write-Host "Installed Plugman $resolvedVersion to $destination"
-        if ($NoModifyPath) {
+        if ($skipPathUpdate) {
             Write-Host "PATH was not changed. Run $destination directly or add $InstallDir to PATH."
         }
         elseif ($pathChanged) {
