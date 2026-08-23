@@ -41,3 +41,117 @@ func TestListJSONUsesManagerReportSchema(t *testing.T) {
 		t.Errorf("output = %#v", output)
 	}
 }
+
+func TestBareUpdateAcceptsUpdateAllMode(t *testing.T) {
+	vaultRoot := emptyVault(t)
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"update", "--dry-run"}, vaultRoot, &stdout, &stderr)
+
+	if exitCode != 0 || !strings.Contains(stdout.String(), "PLUGIN") {
+		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr.String())
+	}
+}
+
+func TestOutdatedJSONOnEmptyVault(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"outdated", "--json"}, emptyVault(t), &stdout, &stderr)
+	if exitCode != 0 || !strings.Contains(stdout.String(), `"schemaVersion":1`) {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
+func TestUninstallNonInteractiveRequiresYes(t *testing.T) {
+	vault := cliVaultWithPlugin(t, "demo", true)
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"uninstall", "demo"}, vault, &stdout, &stderr)
+	if exitCode != 1 || !strings.Contains(stderr.String(), "requires --yes") {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exitCode, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(vault, ".obsidian", "plugins", "demo")); err != nil {
+		t.Fatalf("unconfirmed uninstall changed Vault: %v", err)
+	}
+}
+
+func TestUninstallPromptsOnceAndCanCancel(t *testing.T) {
+	vault := cliVaultWithPlugin(t, "demo", true)
+	var stdout, stderr bytes.Buffer
+	exitCode := runCommand([]string{"uninstall", "demo"}, vault, strings.NewReader("n\n"), &stdout, &stderr, true)
+	if exitCode != 0 || strings.Count(stdout.String(), "Uninstall these plugins?") != 1 || !strings.Contains(stdout.String(), "demo") || !strings.Contains(stdout.String(), "Cancelled") {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
+func TestUninstallYesRemovesPluginFolder(t *testing.T) {
+	vault := cliVaultWithPlugin(t, "demo", false)
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"uninstall", "--yes", "demo"}, vault, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exitCode, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(vault, ".obsidian", "plugins", "demo")); !os.IsNotExist(err) {
+		t.Fatalf("plugin folder remains: %v", err)
+	}
+}
+
+func TestUninstallDryRunDoesNotRequireConfirmationOrChangeVault(t *testing.T) {
+	vault := cliVaultWithPlugin(t, "demo", false)
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"uninstall", "--dry-run", "demo"}, vault, &stdout, &stderr)
+	if exitCode != 0 || !strings.Contains(stdout.String(), "uninstall") {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exitCode, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(vault, ".obsidian", "plugins", "demo")); err != nil {
+		t.Fatalf("dry-run changed Vault: %v", err)
+	}
+}
+
+func TestExportWritesPluginListPath(t *testing.T) {
+	vault := emptyVault(t)
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"export", "saved.plugins"}, vault, &stdout, &stderr)
+	if exitCode != 0 || !strings.Contains(stdout.String(), "Exported 0 plugins") {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exitCode, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(vault, "saved.plugins")); err != nil {
+		t.Fatalf("export missing: %v", err)
+	}
+}
+
+func TestHelpListsUpdateCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if exitCode := run(nil, t.TempDir(), &stdout, &stderr); exitCode != 0 {
+		t.Fatalf("exit code = %d", exitCode)
+	}
+	if !strings.Contains(stdout.String(), "update") {
+		t.Fatalf("help = %q", stdout.String())
+	}
+}
+
+func emptyVault(t *testing.T) string {
+	t.Helper()
+	vault := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(vault, ".obsidian"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return vault
+}
+
+func cliVaultWithPlugin(t *testing.T, id string, enabled bool) string {
+	t.Helper()
+	vault := emptyVault(t)
+	plugin := filepath.Join(vault, ".obsidian", "plugins", id)
+	if err := os.MkdirAll(plugin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plugin, "manifest.json"), []byte(`{"id":"`+id+`","version":"1.0.0"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	enabledJSON := "[]"
+	if enabled {
+		enabledJSON = `["` + id + `"]`
+	}
+	if err := os.WriteFile(filepath.Join(vault, ".obsidian", "community-plugins.json"), []byte(enabledJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return vault
+}

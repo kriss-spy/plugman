@@ -153,6 +153,10 @@ Options: `--enabled`, `--latest`, `--force`.
 - Update preserves prior enabled state.
 - Live replacement may temporarily disable a plugin as a mechanical safety step.
 
+## Compatibility target
+
+Because a Vault does not record the installed Obsidian desktop version, Plugman selects releases against Obsidian's latest published stable desktop version. It obtains that version without launching Obsidian and reports the selected plugin's minimum required Obsidian version.
+
 ## Failure and recovery behavior
 
 1. Parse, expand, resolve, validate, and download the entire requested batch.

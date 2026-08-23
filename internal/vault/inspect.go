@@ -3,18 +3,38 @@ package vault
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/kriss-spy/plugman/internal/model"
+	"github.com/kriss-spy/plugman/internal/provenance"
 )
+
+// ValidateRoot verifies that vaultRoot names a Vault Root containing an
+// existing .obsidian directory. Vault owns this filesystem interpretation so
+// callers do not duplicate Vault layout knowledge.
+func ValidateRoot(vaultRoot string) error {
+	configurationPath := filepath.Join(vaultRoot, ".obsidian")
+	info, err := os.Stat(configurationPath)
+	if err != nil {
+		return &model.VaultValidationError{Path: configurationPath, Reason: err.Error()}
+	}
+	if !info.IsDir() {
+		return &model.VaultValidationError{Path: configurationPath, Reason: "not a directory"}
+	}
+	return nil
+}
 
 // Inspect reads all Community Plugin state which can be proven locally.
 func Inspect(vaultRoot string) ([]model.PluginObservation, error) {
 	configurationPath := filepath.Join(vaultRoot, ".obsidian")
+	recoveryPath := filepath.Join(configurationPath, ".plugman", "recovery", "current")
+	if _, err := os.Lstat(recoveryPath); err == nil {
+		return nil, &model.PendingRecoveryError{Path: recoveryPath}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("inspect pending plugin recovery: %w", err)
+	}
 	enabled, err := readEnabled(configurationPath)
 	if err != nil {
 		return nil, err
@@ -66,10 +86,31 @@ func Inspect(vaultRoot string) ([]model.PluginObservation, error) {
 			continue
 		}
 		observation := inspectManifest(folder, contents, enabled)
+		inspectData(filepath.Join(pluginsPath, folder), &observation)
 		readSourceRecord(filepath.Join(pluginsPath, folder), &observation)
 		plugins = append(plugins, observation)
 	}
 	return plugins, nil
+}
+
+func inspectData(pluginRoot string, observation *model.PluginObservation) {
+	present := false
+	observation.HasData = &present
+	info, err := os.Lstat(filepath.Join(pluginRoot, "data.json"))
+	if os.IsNotExist(err) {
+		return
+	}
+	if err != nil {
+		observation.Status = model.PluginInvalid
+		observation.Problems = append(observation.Problems, model.Problem{Code: "data_unreadable", Message: "data.json cannot be inspected"})
+		return
+	}
+	if !info.Mode().IsRegular() {
+		observation.Status = model.PluginInvalid
+		observation.Problems = append(observation.Problems, model.Problem{Code: "data_not_regular", Message: "data.json must be a regular file"})
+		return
+	}
+	present = true
 }
 
 func readSourceRecord(pluginRoot string, observation *model.PluginObservation) {
@@ -98,21 +139,12 @@ func readSourceRecord(pluginRoot string, observation *model.PluginObservation) {
 		Repository string `json:"repository"`
 		Release    string `json:"release"`
 	}
-	if json.Unmarshal(contents, &record) != nil || !validGitHubRepository(record.Repository) || record.Release == "" {
+	if json.Unmarshal(contents, &record) != nil || !provenance.ValidGitHubSource(record.Repository, record.Release) {
 		observation.Status = model.PluginInvalid
 		observation.Problems = append(observation.Problems, model.Problem{Code: "source_record_invalid", Message: ".plugman.json must contain a public HTTPS GitHub repository and release"})
 		return
 	}
 	observation.Source = model.PluginSource{Kind: model.SourceGitHub, Repository: &record.Repository, Release: &record.Release}
-}
-
-func validGitHubRepository(value string) bool {
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme != "https" || parsed.Host != "github.com" || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return false
-	}
-	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	return len(parts) == 2 && parts[0] != "" && parts[1] != ""
 }
 
 func inspectManifest(folder string, contents []byte, enabled map[string]bool) model.PluginObservation {

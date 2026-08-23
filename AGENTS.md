@@ -9,7 +9,7 @@ The Go implementation follows the architecture’s modular-monolith layout: CLI 
 ## Build, Test, and Development Commands
 
 - `git diff --check` — catch whitespace errors in every change.
-- `gofmt -w .` — format Go sources when Go files are present.
+- `gofmt -w $(find cmd internal -type f -name '*.go')` — format all Go sources.
 - `go build ./cmd/plugman` — build the CLI after the Go module is scaffolded.
 - `go test ./...` — run the complete Go test suite.
 - `go test -race ./...` — check concurrent and live-vault code for races.
