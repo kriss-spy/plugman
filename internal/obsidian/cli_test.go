@@ -139,12 +139,13 @@ func TestCLIClientProbeDistinguishesUnavailableAndUnsupported(t *testing.T) {
 }
 
 func TestCLIClientInspectsPluginThroughTargetedVault(t *testing.T) {
+	vault := t.TempDir()
 	runner := &fakeCommandRunner{
 		available: true,
 		outputs:   []string{`{"present":true,"id":"sample","version":"1.2.3","enabled":true,"loaded":true}`},
 	}
 	client := obsidian.NewCLIClient(obsidian.CLIConfig{
-		Executable: "obsidian", VaultPath: "/vault", Runner: runner,
+		Executable: "obsidian", VaultPath: vault, Runner: runner,
 		Detector: staticDetector{status: obsidian.RuntimeStatus{Running: true, CLISupported: true, SafeToInvoke: true}},
 	})
 
@@ -163,7 +164,7 @@ func TestCLIClientInspectsPluginThroughTargetedVault(t *testing.T) {
 		t.Fatalf("Vault verification = %+v", runner.commands[0])
 	}
 	command := runner.commands[1]
-	if command.Executable != "obsidian" || command.Dir != "/vault" || len(command.Args) != 2 {
+	if command.Executable != "obsidian" || command.Dir != vault || len(command.Args) != 2 {
 		t.Fatalf("command = %+v", command)
 	}
 	if command.Args[0] != "eval" || !strings.HasPrefix(command.Args[1], "code=") {
@@ -193,9 +194,10 @@ func TestCLIClientReportsRuntimeStateWithoutReadingPluginFiles(t *testing.T) {
 }
 
 func TestCLIClientMapsPluginLifecycleCommandsWithoutShell(t *testing.T) {
+	vault := t.TempDir()
 	runner := &fakeCommandRunner{available: true}
 	client := obsidian.NewCLIClient(obsidian.CLIConfig{
-		Executable: "obsidian-custom", VaultPath: "/vault", Runner: runner,
+		Executable: "obsidian-custom", VaultPath: vault, Runner: runner,
 		Detector: staticDetector{status: obsidian.RuntimeStatus{Running: true, CLISupported: true, SafeToInvoke: true}},
 	})
 	ctx := context.Background()
@@ -223,20 +225,21 @@ func TestCLIClientMapsPluginLifecycleCommandsWithoutShell(t *testing.T) {
 		t.Fatalf("commands = %+v", runner.commands)
 	}
 	for i, command := range runner.commands {
-		if command.Executable != "obsidian-custom" || command.Dir != "/vault" || !reflect.DeepEqual(command.Args, wantArgs[i]) {
+		if command.Executable != "obsidian-custom" || command.Dir != vault || !reflect.DeepEqual(command.Args, wantArgs[i]) {
 			t.Errorf("command %d = %+v, want args %v", i, command, wantArgs[i])
 		}
 	}
 }
 
 func TestCLIClientRechecksRuntimeBeforeEveryCommand(t *testing.T) {
+	vault := t.TempDir()
 	runner := &fakeCommandRunner{available: true}
 	detector := &sequenceDetector{statuses: []obsidian.RuntimeStatus{
 		{Running: true, CLISupported: true, SafeToInvoke: true},
 		{Running: false},
 	}}
 	client := obsidian.NewCLIClient(obsidian.CLIConfig{
-		VaultPath: "/vault", Runner: runner, Detector: detector,
+		VaultPath: vault, Runner: runner, Detector: detector,
 	})
 
 	if err := client.Probe(context.Background()); err != nil {
