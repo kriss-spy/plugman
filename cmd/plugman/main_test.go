@@ -127,6 +127,43 @@ func TestHelpListsUpdateCommand(t *testing.T) {
 	}
 }
 
+func TestHelpFlagPrintsHelpAndSucceeds(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"--help"}, t.TempDir(), &stdout, &stderr)
+	if exitCode != 0 || !strings.Contains(stdout.String(), "Usage: plugman") || stderr.Len() != 0 {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
+func TestShortHelpFlagPrintsHelpAndSucceeds(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"-h"}, t.TempDir(), &stdout, &stderr)
+	if exitCode != 0 || !strings.Contains(stdout.String(), "Usage: plugman") || stderr.Len() != 0 {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
+func TestHelpCommandPrintsHelpAndSucceeds(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{"help"}, t.TempDir(), &stdout, &stderr)
+	if exitCode != 0 || !strings.Contains(stdout.String(), "Usage: plugman") || stderr.Len() != 0 {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
+func TestSubcommandHelpPrintsUsageAndSucceeds(t *testing.T) {
+	commands := []string{"install", "update", "uninstall", "list", "outdated", "info", "export"}
+	for _, command := range commands {
+		t.Run(command, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := run([]string{command, "--help"}, t.TempDir(), &stdout, &stderr)
+			if exitCode != 0 || !strings.Contains(stderr.String(), "Usage of "+command) {
+				t.Fatalf("exit = %d, stdout = %q, stderr = %q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
 func emptyVault(t *testing.T) string {
 	t.Helper()
 	vault := t.TempDir()

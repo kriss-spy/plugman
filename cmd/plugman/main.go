@@ -39,6 +39,10 @@ func runCommand(args []string, vaultRoot string, stdin io.Reader, stdout, stderr
 		printHelp(stdout)
 		return 0
 	}
+	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+		printHelp(stdout)
+		return 0
+	}
 	if args[0] == "--version" {
 		fmt.Fprintln(stdout, version)
 		return 0
@@ -70,8 +74,8 @@ func runCommand(args []string, vaultRoot string, stdin io.Reader, stdout, stderr
 	flags.SetOutput(stderr)
 	enabledOnly := flags.Bool("enabled", false, "list enabled plugins only")
 	jsonOutput := flags.Bool("json", false, "emit stable JSON")
-	if err := flags.Parse(args[1:]); err != nil {
-		return 2
+	if exitCode, done := parseFlags(flags, args[1:]); done {
+		return exitCode
 	}
 	if flags.NArg() != 0 {
 		fmt.Fprintln(stderr, "plugman list does not accept arguments")
@@ -104,8 +108,8 @@ func runInstall(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 	enable := flags.Bool("enable", false, "enable newly installed plugins")
 	allowDowngrade := flags.Bool("allow-downgrade", false, "allow exact versions older than installed")
 	dryRun := flags.Bool("dry-run", false, "resolve and print the plan without changing the Vault")
-	if err := flags.Parse(args); err != nil {
-		return 2
+	if exitCode, done := parseFlags(flags, args); done {
+		return exitCode
 	}
 	if flags.NArg() == 0 {
 		fmt.Fprintln(stderr, "plugman install requires at least one plugin ID, Plugin List path, or GitHub URL")
@@ -139,8 +143,8 @@ func runUpdate(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	allowDowngrade := flags.Bool("allow-downgrade", false, "allow versions older than installed")
 	dryRun := flags.Bool("dry-run", false, "resolve and print the plan without changing the Vault")
-	if err := flags.Parse(args); err != nil {
-		return 2
+	if exitCode, done := parseFlags(flags, args); done {
+		return exitCode
 	}
 	result, err := manager.NewWithConfig(vaultRoot, manager.Config{PlanReady: func(result model.Report) error {
 		return report.Plan(stdout, result)
@@ -168,8 +172,8 @@ func runOutdated(args []string, vaultRoot string, stdout, stderr io.Writer) int 
 	flags := flag.NewFlagSet("outdated", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	jsonOutput := flags.Bool("json", false, "emit stable JSON")
-	if err := flags.Parse(args); err != nil {
-		return 2
+	if exitCode, done := parseFlags(flags, args); done {
+		return exitCode
 	}
 	if flags.NArg() != 0 {
 		fmt.Fprintln(stderr, "plugman outdated does not accept arguments")
@@ -198,8 +202,8 @@ func runUninstall(args []string, vaultRoot string, stdin io.Reader, stdout, stde
 	keepData := flags.Bool("keep-data", false, "preserve plugin data.json")
 	yes := flags.Bool("yes", false, "skip interactive confirmation")
 	dryRun := flags.Bool("dry-run", false, "print the plan without changing the Vault")
-	if err := flags.Parse(args); err != nil {
-		return 2
+	if exitCode, done := parseFlags(flags, args); done {
+		return exitCode
 	}
 	if flags.NArg() == 0 {
 		fmt.Fprintln(stderr, "plugman uninstall requires at least one plugin ID")
@@ -256,8 +260,8 @@ func runExport(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 	enabled := flags.Bool("enabled", false, "export enabled plugins only")
 	latest := flags.Bool("latest", false, "omit exact release versions")
 	force := flags.Bool("force", false, "overwrite an existing destination")
-	if err := flags.Parse(args); err != nil {
-		return 2
+	if exitCode, done := parseFlags(flags, args); done {
+		return exitCode
 	}
 	if flags.NArg() != 1 {
 		fmt.Fprintln(stderr, "plugman export requires one Plugin List path")
@@ -278,8 +282,8 @@ func runInfo(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("info", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	jsonOutput := flags.Bool("json", false, "emit stable JSON")
-	if err := flags.Parse(args); err != nil {
-		return 2
+	if exitCode, done := parseFlags(flags, args); done {
+		return exitCode
 	}
 	if flags.NArg() != 1 {
 		fmt.Fprintln(stderr, "plugman info requires one plugin ID or GitHub URL")
@@ -308,4 +312,15 @@ func runInfo(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 func printHelp(writer io.Writer) {
 	fmt.Fprintln(writer, "Usage: plugman <command> [options]")
 	fmt.Fprintln(writer, "Commands: install, update, uninstall, list, outdated, info, export")
+}
+
+func parseFlags(flags *flag.FlagSet, args []string) (int, bool) {
+	err := flags.Parse(args)
+	if err == nil {
+		return 0, false
+	}
+	if errors.Is(err, flag.ErrHelp) {
+		return 0, true
+	}
+	return 2, true
 }
