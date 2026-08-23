@@ -1,0 +1,3 @@
+# Offer global and targeted update modes
+
+Bare `plugman update` updates all installed plugins recognized by Obsidian's official community directory using Obsidian's live update behavior, while `plugman update <Plugin Inputs...>` updates only plugins resolved from those IDs, lists, or GitHub URLs. Exact declarations remain fixed, and GitHub-only plugins require an explicit input because bare update deliberately mirrors Obsidian's official-directory update-all behavior, even when Plugman has retained their Source Records. If Obsidian's private live-update surface is incompatible, the global operation fails safely rather than editing loaded files directly.
