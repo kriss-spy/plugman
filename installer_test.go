@@ -127,8 +127,12 @@ func TestUnixInstallerAddsCustomDirectoryWithSpacesToFishPath(t *testing.T) {
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("install.sh: %v\n%s", err, output)
 	}
+	canonicalInstallDir, err := filepath.EvalSymlinks(installDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	profile, err := os.ReadFile(filepath.Join(home, ".config", "fish", "config.fish"))
-	if err != nil || !strings.Contains(string(profile), "fish_add_path '"+installDir+"'") {
+	if err != nil || !strings.Contains(string(profile), "fish_add_path '"+canonicalInstallDir+"'") {
 		t.Fatalf("fish profile = %q, %v", profile, err)
 	}
 }

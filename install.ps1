@@ -217,7 +217,7 @@ try {
             Save-ReleaseFile "$releaseBaseUrl/checksums.txt" $checksumPath
         }
         catch {
-            throw "Could not download Plugman $resolvedVersion: $($_.Exception.Message)"
+            throw "Could not download Plugman ${resolvedVersion}: $($_.Exception.Message)"
         }
 
         $expectedHash = Get-ExpectedChecksum $checksumPath $artifactName
