@@ -172,6 +172,27 @@ func TestCLIClientInspectsPluginThroughTargetedVault(t *testing.T) {
 	}
 }
 
+func TestCLIClientInspectStripsCLIReturnValuePrefix(t *testing.T) {
+	vault := t.TempDir()
+	runner := &fakeCommandRunner{
+		available: true,
+		outputs:   []string{`=> {"present":true,"id":"sample","version":"1.2.3","enabled":true,"loaded":true}`},
+	}
+	client := obsidian.NewCLIClient(obsidian.CLIConfig{
+		VaultPath: vault, Runner: runner,
+		Detector: staticDetector{status: obsidian.RuntimeStatus{Running: true, CLISupported: true, SafeToInvoke: true}},
+	})
+
+	state, err := client.Inspect(context.Background(), "sample")
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	want := obsidian.PluginState{Present: true, ID: "sample", Version: "1.2.3", Enabled: true, Loaded: true}
+	if state != want {
+		t.Fatalf("state = %+v, want %+v", state, want)
+	}
+}
+
 func TestCLIClientReportsRuntimeStateWithoutReadingPluginFiles(t *testing.T) {
 	vault := filepath.Join(t.TempDir(), "missing-vault")
 	runner := &fakeCommandRunner{

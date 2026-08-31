@@ -154,10 +154,19 @@ func (c *CLIClient) Inspect(ctx context.Context, pluginID string) (PluginState, 
 		return PluginState{}, fmt.Errorf("inspect plugin %q: %w", pluginID, err)
 	}
 	var state PluginState
-	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &state); err != nil {
+	if err := decodeEvalJSON(output, &state); err != nil {
 		return PluginState{}, fmt.Errorf("decode plugin state: %w", err)
 	}
 	return state, nil
+}
+
+// decodeEvalJSON strips the Obsidian CLI's "=> " return-value prefix before
+// decoding the JSON value an eval script emitted.
+func decodeEvalJSON(output string, destination any) error {
+	value := strings.TrimSpace(output)
+	value = strings.TrimPrefix(value, "=>")
+	value = strings.TrimSpace(value)
+	return json.Unmarshal([]byte(value), destination)
 }
 
 func (c *CLIClient) Disable(ctx context.Context, pluginID string) error {
