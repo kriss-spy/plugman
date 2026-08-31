@@ -28,6 +28,13 @@ type PluginState struct {
 	Loaded  bool
 }
 
+// IsQuiescedCache reports whether Obsidian is only remembering a manifest for
+// a plugin whose files are already gone: present but neither loaded nor
+// enabled. Live coordination treats this phantom state as absent.
+func (s PluginState) IsQuiescedCache() bool {
+	return s.Present && !s.Loaded && !s.Enabled
+}
+
 // ChangePlan binds an already-planned filesystem change to live Obsidian
 // state. The plan contains no filesystem callbacks; change.Engine owns the
 // Restore Point and the mutation lifecycle.
@@ -110,6 +117,7 @@ func (s *LiveSession) Prepare(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("inspect plugin runtime state: %w", err)
 	}
+	snapshot = s.normalizeInspect(snapshot)
 	if snapshot != s.plan.PlannedState {
 		return fmt.Errorf("plugin state changed before live replacement: %w", ErrStateChanged)
 	}
@@ -119,6 +127,7 @@ func (s *LiveSession) Prepare(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("recheck plugin runtime state: %w", err)
 	}
+	rechecked = s.normalizeInspect(rechecked)
 	if rechecked != snapshot {
 		return fmt.Errorf("plugin state changed during live replacement: %w", ErrStateChanged)
 	}
@@ -134,6 +143,17 @@ func (s *LiveSession) Prepare(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// normalizeInspect maps Obsidian's phantom "quiesced cache" state (a cached
+// manifest for a plugin whose files are gone) to absent when the plan expects
+// the plugin to be absent, so a fresh install is not mistaken for a concurrent
+// installation.
+func (s *LiveSession) normalizeInspect(state PluginState) PluginState {
+	if s.plan.PlannedState == (PluginState{}) && state.IsQuiescedCache() {
+		return PluginState{}
+	}
+	return state
 }
 
 // Commit reloads the replacement, restores the intended enabled state, and

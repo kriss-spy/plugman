@@ -813,6 +813,9 @@ func (m *manager) prepareRuntime(ctx context.Context, changes []runtimeChange) (
 			return false, nil, fmt.Errorf("inspect running plugin %q: %w", planned.id, err)
 		}
 		if planned.currentVersion == nil {
+			if state.IsQuiescedCache() {
+				state = obsidian.PluginState{}
+			}
 			if state != (obsidian.PluginState{}) {
 				return false, nil, fmt.Errorf("plugin %q appeared in Obsidian after planning", planned.id)
 			}

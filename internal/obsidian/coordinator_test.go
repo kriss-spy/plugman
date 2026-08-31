@@ -138,6 +138,32 @@ func TestCoordinatorInstallsNewPluginDisabledByDefault(t *testing.T) {
 	}
 }
 
+func TestCoordinatorInstallsNewPluginDespiteQuiescedCache(t *testing.T) {
+	// After an uninstall, Obsidian keeps a quiesced cached manifest (present
+	// but neither loaded nor enabled). A fresh install of the same ID must
+	// treat that phantom state as absent rather than a concurrent install.
+	client := newFakeClient(obsidian.PluginState{Present: true, ID: "dataview", Version: "1.0.0"})
+	client.onReload = func() {
+		client.state = obsidian.PluginState{Present: true, ID: "dataview", Version: "2.0.0"}
+	}
+
+	result, err := obsidian.NewCoordinator(client).Replace(context.Background(), obsidian.ReplaceRequest{
+		PluginID: "dataview", PlannedState: obsidian.PluginState{}, TargetVersion: "2.0.0",
+		ReplaceFiles: func(context.Context) error { return nil },
+		RestoreFiles: func(context.Context) error { return nil },
+	})
+	if err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	if result.State.Enabled || result.State.Loaded {
+		t.Fatalf("new plugin was activated: %+v", result.State)
+	}
+	wantCalls := []string{"probe", "inspect", "inspect", "reload", "inspect"}
+	if !reflect.DeepEqual(client.calls, wantCalls) {
+		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
+	}
+}
+
 func TestCoordinatorRestoresAbsentStateWithoutReloadingRemovedPlugin(t *testing.T) {
 	client := newFakeClient(obsidian.PluginState{})
 	client.failOnce["reload"] = errors.New("reload failed")
