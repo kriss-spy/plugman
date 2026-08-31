@@ -217,7 +217,7 @@ func (m *manager) install(ctx context.Context, batch change.Batch, plugins []mod
 
 func (m *manager) update(ctx context.Context, batch change.Batch, plugins []model.PluginObservation, options model.UpdateOptions) (model.Report, error) {
 	if len(options.Inputs) == 0 {
-		inputs, err := m.officialInstalledIDs(ctx, plugins)
+		inputs, err := m.installedInputs(ctx, plugins, options.EnabledOnly)
 		if err != nil {
 			return preflightReport(model.Report{}, plugins, err)
 		}
@@ -230,10 +230,16 @@ func (m *manager) update(ctx context.Context, batch change.Batch, plugins []mode
 	return preflightReport(report, plugins, err)
 }
 
-func (m *manager) officialInstalledIDs(ctx context.Context, plugins []model.PluginObservation) ([]string, error) {
-	ids := make([]string, 0, len(plugins))
+// installedInputs returns the Plugin Inputs for a bare update: every installed
+// plugin with a resolvable source (official directory or GitHub Source Record).
+// Unknown-source plugins are skipped because they have no release to resolve.
+func (m *manager) installedInputs(ctx context.Context, plugins []model.PluginObservation, enabledOnly bool) ([]string, error) {
+	inputs := make([]string, 0, len(plugins))
 	for _, plugin := range plugins {
-		if plugin.Status != model.PluginValid || plugin.ID == nil {
+		if plugin.Status != model.PluginValid || plugin.ID == nil || plugin.Version == nil || plugin.Enabled == nil {
+			continue
+		}
+		if enabledOnly && !*plugin.Enabled {
 			continue
 		}
 		recognized, recognizeErr := m.recognizer.Recognize(ctx, *plugin.ID)
@@ -241,10 +247,14 @@ func (m *manager) officialInstalledIDs(ctx context.Context, plugins []model.Plug
 			return nil, recognizeErr
 		}
 		if recognized {
-			ids = append(ids, *plugin.ID)
+			inputs = append(inputs, *plugin.ID)
+			continue
+		}
+		if plugin.Source.Kind == model.SourceGitHub && plugin.Source.Repository != nil {
+			inputs = append(inputs, *plugin.Source.Repository)
 		}
 	}
-	return ids, nil
+	return inputs, nil
 }
 
 func preflightReport(report model.Report, plugins []model.PluginObservation, err error) (model.Report, error) {
@@ -257,6 +267,15 @@ func preflightReport(report model.Report, plugins []model.PluginObservation, err
 }
 
 func (m *manager) outdated(ctx context.Context, plugins []model.PluginObservation, options model.OutdatedOptions) (model.Report, error) {
+	if options.EnabledOnly {
+		filtered := make([]model.PluginObservation, 0, len(plugins))
+		for _, plugin := range plugins {
+			if plugin.Enabled != nil && *plugin.Enabled {
+				filtered = append(filtered, plugin)
+			}
+		}
+		plugins = filtered
+	}
 	hasCheckable := false
 	firstPluginID := ""
 	for _, plugin := range plugins {

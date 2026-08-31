@@ -163,6 +163,7 @@ func runUpdate(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	allowDowngrade := flags.Bool("allow-downgrade", false, "allow versions older than installed")
 	dryRun := flags.Bool("dry-run", false, "resolve and print the plan without changing the Vault")
+	enabledOnly := flags.Bool("enabled", false, "update enabled plugins only")
 	if exitCode, done := parseFlags(flags, args); done {
 		return exitCode
 	}
@@ -170,7 +171,7 @@ func runUpdate(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 		return report.Plan(stdout, result)
 	}})).Run(context.Background(), model.Operation{
 		Kind:   model.OperationUpdate,
-		Update: model.UpdateOptions{Inputs: flags.Args(), AllowDowngrade: *allowDowngrade, DryRun: *dryRun},
+		Update: model.UpdateOptions{Inputs: flags.Args(), EnabledOnly: *enabledOnly, AllowDowngrade: *allowDowngrade, DryRun: *dryRun},
 	})
 	if err != nil {
 		if len(result.Results) != 0 {
@@ -192,6 +193,7 @@ func runOutdated(args []string, vaultRoot string, stdout, stderr io.Writer, inte
 	flags := flag.NewFlagSet("outdated", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	jsonOutput := flags.Bool("json", false, "emit stable JSON")
+	enabledOnly := flags.Bool("enabled", false, "check enabled plugins only")
 	if exitCode, done := parseFlags(flags, args); done {
 		return exitCode
 	}
@@ -204,7 +206,7 @@ func runOutdated(args []string, vaultRoot string, stdout, stderr io.Writer, inte
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	result, err := manager.New(vaultRoot).Run(ctx, model.Operation{Kind: model.OperationOutdated})
+	result, err := manager.New(vaultRoot).Run(ctx, model.Operation{Kind: model.OperationOutdated, Outdated: model.OutdatedOptions{EnabledOnly: *enabledOnly}})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1

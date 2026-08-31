@@ -35,12 +35,14 @@ type Operation struct {
 type UpdateOptions struct {
 	Inputs          []string
 	ObsidianVersion string
+	EnabledOnly     bool
 	AllowDowngrade  bool
 	DryRun          bool
 }
 
 type OutdatedOptions struct {
 	ObsidianVersion string
+	EnabledOnly     bool
 }
 
 type UninstallOptions struct {

@@ -803,7 +803,7 @@ func TestTargetedUpdateAppliesExactDeclaredVersion(t *testing.T) {
 	}
 }
 
-func TestBareUpdateIncludesInstalledOfficialPluginsAndExcludesGitHubOnly(t *testing.T) {
+func TestBareUpdateIncludesAllInstalledPluginsWithResolvableSources(t *testing.T) {
 	vaultRoot := newVault(t)
 	officialRoot := filepath.Join(vaultRoot, ".obsidian", "plugins", "official")
 	writeFile(t, filepath.Join(officialRoot, "manifest.json"), `{"id":"official","version":"1.0.0"}`)
@@ -819,9 +819,13 @@ func TestBareUpdateIncludesInstalledOfficialPluginsAndExcludesGitHubOnly(t *test
 	official := &recognizingOfficialResolver{releases: map[string]source.Release{
 		"official": officialRelease("official", "2.0.0"), "official-github": officialRelease("official-github", "2.0.0"),
 	}}
+	github := &fakeGitHubResolver{
+		release:    officialRelease("github-only", "2.0.0"),
+		provenance: source.GitHubProvenance{Repository: "https://github.com/owner/github-only", Release: "2.0.0"},
+	}
 
 	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
-		Official: official, Stager: stager, Change: changer,
+		Official: official, GitHub: github, Stager: stager, Change: changer,
 		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
 	}).Run(context.Background(), model.Operation{
 		Kind: model.OperationUpdate, Update: model.UpdateOptions{ObsidianVersion: "1.8.0"},
@@ -829,10 +833,46 @@ func TestBareUpdateIncludesInstalledOfficialPluginsAndExcludesGitHubOnly(t *test
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if len(report.Plan) != 2 || report.Plan[0].ID != "official" || report.Plan[0].Action != model.PlanUpgrade || report.Plan[1].ID != "official-github" {
+	actions := map[string]model.PlanAction{}
+	for _, item := range report.Plan {
+		actions[item.ID] = item.Action
+	}
+	if len(report.Plan) != 3 || actions["official"] != model.PlanUpgrade || actions["official-github"] != model.PlanUpgrade || actions["github-only"] != model.PlanUpgrade {
 		t.Fatalf("plan = %#v", report.Plan)
 	}
-	if got := changer.pluginIDs(); !reflect.DeepEqual(got, []string{"official", "official-github"}) {
+	if got := changer.pluginIDs(); !reflect.DeepEqual(got, []string{"github-only", "official", "official-github"}) {
+		t.Fatalf("updated = %v", got)
+	}
+	if github.input != "https://github.com/owner/github-only" {
+		t.Fatalf("GitHub resolved input = %q", github.input)
+	}
+}
+
+func TestUpdateEnabledOnlyFiltersBareUpdateToEnabledPlugins(t *testing.T) {
+	vaultRoot := newVault(t)
+	writeFile(t, filepath.Join(vaultRoot, ".obsidian", "plugins", "enabled", "manifest.json"), `{"id":"enabled","version":"1.0.0"}`)
+	writeFile(t, filepath.Join(vaultRoot, ".obsidian", "plugins", "disabled", "manifest.json"), `{"id":"disabled","version":"1.0.0"}`)
+	writeFile(t, filepath.Join(vaultRoot, ".obsidian", "community-plugins.json"), `["enabled"]`)
+	stager := &fakeStager{t: t}
+	changer := &fakeChanger{stager: stager}
+	official := &recognizingOfficialResolver{releases: map[string]source.Release{
+		"enabled":  officialRelease("enabled", "2.0.0"),
+		"disabled": officialRelease("disabled", "2.0.0"),
+	}}
+
+	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
+		Official: official, Stager: stager, Change: changer,
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
+	}).Run(context.Background(), model.Operation{
+		Kind: model.OperationUpdate, Update: model.UpdateOptions{ObsidianVersion: "1.8.0", EnabledOnly: true},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(report.Plan) != 1 || report.Plan[0].ID != "enabled" {
+		t.Fatalf("plan = %#v, want only enabled plugin", report.Plan)
+	}
+	if got := changer.pluginIDs(); !reflect.DeepEqual(got, []string{"enabled"}) {
 		t.Fatalf("updated = %v", got)
 	}
 }
@@ -890,6 +930,27 @@ func TestOutdatedKeepsGitHubResultsAndClassifiesLocalsWhenRegistryIsUnavailable(
 	}
 	if report.Outdated[1].Problem == "" || report.Outdated[2].Problem == "" {
 		t.Fatalf("transport problems missing: %#v", report.Outdated)
+	}
+}
+
+func TestOutdatedEnabledOnlyFiltersOnEnabledState(t *testing.T) {
+	vaultRoot := newVault(t)
+	writeFile(t, filepath.Join(vaultRoot, ".obsidian", "plugins", "enabled", "manifest.json"), `{"id":"enabled","version":"1.0.0"}`)
+	writeFile(t, filepath.Join(vaultRoot, ".obsidian", "plugins", "disabled", "manifest.json"), `{"id":"disabled","version":"1.0.0"}`)
+	writeFile(t, filepath.Join(vaultRoot, ".obsidian", "community-plugins.json"), `["enabled"]`)
+	official := &recognizingOfficialResolver{releases: map[string]source.Release{
+		"enabled":  officialRelease("enabled", "2.0.0"),
+		"disabled": officialRelease("disabled", "2.0.0"),
+	}}
+
+	report, err := manager.NewWithConfig(vaultRoot, manager.Config{Official: official}).Run(context.Background(), model.Operation{
+		Kind: model.OperationOutdated, Outdated: model.OutdatedOptions{ObsidianVersion: "1.8.0", EnabledOnly: true},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(report.Outdated) != 1 || report.Outdated[0].ID != "enabled" {
+		t.Fatalf("outdated = %#v, want only enabled plugin", report.Outdated)
 	}
 }
 

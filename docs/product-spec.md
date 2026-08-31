@@ -70,13 +70,14 @@ Options: `--enable`, `--allow-downgrade`, `--dry-run`.
 
 ### `plugman update [inputs...]`
 
-Options: `--allow-downgrade`, `--dry-run`.
+Options: `--enabled`, `--allow-downgrade`, `--dry-run`.
 
-- With no inputs, update every installed plugin recognized by Obsidian's official community directory.
+- With no inputs, update every installed plugin with a resolvable source: official community directory or GitHub Source Record.
+- `--enabled` limits a bare update to enabled plugins.
 - With inputs, update only the plugins resolved from those inputs.
 - An unversioned official ID or GitHub repository advances to the newest compatible non-prerelease release.
 - Exact IDs and exact release URLs remain fixed.
-- A GitHub-only plugin requires an explicit URL or a Plugin List containing its URL.
+- A GitHub-only plugin is updated through its Source Record; a plugin recognized by the official directory is updated through the official directory.
 - Enabled plugins remain enabled; disabled plugins remain disabled.
 - The command prints its planned version changes and applies them without another confirmation.
 
@@ -101,10 +102,11 @@ Options: `--enabled`, `--json`.
 
 ### `plugman outdated`
 
-Option: `--json`.
+Options: `--enabled`, `--json`.
 
 - Checks every installed official plugin and every GitHub plugin with a Source Record.
 - Reports current version, newest compatible version, enabled state, source, and release URL.
+- `--enabled` filters to enabled plugins.
 - Makes no changes.
 - Does not generate AI summaries.
 
