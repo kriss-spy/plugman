@@ -379,7 +379,8 @@ func TestInstallPreflightsCompleteBatchBeforeApplyingInDeclarationOrder(t *testi
 
 	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
 		Official: resolver, Stager: stager, Change: changer,
-		PlanReady: func(model.Report) error { planPrinted = true; return nil },
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
+		PlanReady:  func(model.Report) error { planPrinted = true; return nil },
 	}).Run(context.Background(), model.Operation{
 		Kind:    model.OperationInstall,
 		Install: model.InstallOptions{Inputs: []string{"first", "second"}, ObsidianVersion: "1.8.0", Enable: true},
@@ -412,7 +413,10 @@ func TestInstallPreflightFailureAppliesNothing(t *testing.T) {
 		"second": officialRelease("second", "1.0.0"),
 	}}
 
-	report, err := manager.NewWithConfig(vaultRoot, manager.Config{Official: resolver, Stager: stager, Change: changer}).Run(context.Background(), model.Operation{
+	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
+		Official: resolver, Stager: stager, Change: changer,
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
+	}).Run(context.Background(), model.Operation{
 		Kind: model.OperationInstall, Install: model.InstallOptions{Inputs: []string{"first", "second"}, ObsidianVersion: "1.8.0"},
 	})
 	if err == nil || len(changer.requests) != 0 || report.Category != model.ResultPreflightFailure {
@@ -429,7 +433,10 @@ func TestInstallValidatesEveryPreparedChangeBeforeFirstApply(t *testing.T) {
 		"second": officialRelease("second", "1.0.0"),
 	}}
 
-	report, err := manager.NewWithConfig(vaultRoot, manager.Config{Official: resolver, Stager: stager, Change: changer}).Run(context.Background(), model.Operation{
+	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
+		Official: resolver, Stager: stager, Change: changer,
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
+	}).Run(context.Background(), model.Operation{
 		Kind: model.OperationInstall, Install: model.InstallOptions{Inputs: []string{"first", "second"}, ObsidianVersion: "1.8.0"},
 	})
 	if err == nil || changer.validationCalls != 2 || len(changer.requests) != 0 || report.Category != model.ResultPreflightFailure {
@@ -448,6 +455,7 @@ func TestInstallResultsRetainDeclarationOrderWhenSomePluginsAreUnchanged(t *test
 
 	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
 		Official: resolver, Stager: stager, Change: &fakeChanger{stager: stager},
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
 	}).Run(context.Background(), model.Operation{Kind: model.OperationInstall, Install: model.InstallOptions{
 		Inputs: []string{"first", "second"}, ObsidianVersion: "1.8.0",
 	}})
@@ -469,7 +477,10 @@ func TestInstallPassesGitHubSourceRecordToChangeEngine(t *testing.T) {
 		provenance: source.GitHubProvenance{Repository: repository, Release: "1.2.3"},
 	}
 
-	_, err := manager.NewWithConfig(vaultRoot, manager.Config{GitHub: github, Stager: stager, Change: changer}).Run(context.Background(), model.Operation{
+	_, err := manager.NewWithConfig(vaultRoot, manager.Config{
+		GitHub: github, Stager: stager, Change: changer,
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
+	}).Run(context.Background(), model.Operation{
 		Kind:    model.OperationInstall,
 		Install: model.InstallOptions{Inputs: []string{repository}, ObsidianVersion: "1.8.0"},
 	})
@@ -491,7 +502,10 @@ func TestInstallStopsAfterFailureAndReportsRestoredPartialResult(t *testing.T) {
 		"third":  officialRelease("third", "1.0.0"),
 	}}
 
-	report, err := manager.NewWithConfig(vaultRoot, manager.Config{Official: resolver, Stager: stager, Change: changer}).Run(context.Background(), model.Operation{
+	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
+		Official: resolver, Stager: stager, Change: changer,
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
+	}).Run(context.Background(), model.Operation{
 		Kind:    model.OperationInstall,
 		Install: model.InstallOptions{Inputs: []string{"first", "second", "third"}, ObsidianVersion: "1.8.0"},
 	})
@@ -664,7 +678,10 @@ func TestRecoveryRequiredBlocksBeforeSourceResolution(t *testing.T) {
 		return &change.RecoveryRequiredError{Path: filepath.Join(vaultRoot, ".obsidian", ".plugman", "recovery", "current"), Err: errors.New("live runtime verification required")}
 	}}
 
-	report, err := manager.NewWithConfig(vaultRoot, manager.Config{Official: official, Change: changer}).Run(context.Background(), model.Operation{
+	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
+		Official: official, Change: changer,
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
+	}).Run(context.Background(), model.Operation{
 		Kind: model.OperationInstall, Install: model.InstallOptions{Inputs: []string{"demo"}, ObsidianVersion: "1.8.0"},
 	})
 	var recoveryRequired *change.RecoveryRequiredError
@@ -751,6 +768,7 @@ func TestTargetedUpdateAdvancesUnversionedPluginAndPreservesState(t *testing.T) 
 
 	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
 		Official: &fakeOfficialResolver{release: officialRelease("demo", "2.0.0")}, Stager: stager, Change: changer,
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
 	}).Run(context.Background(), model.Operation{Kind: model.OperationUpdate, Update: model.UpdateOptions{
 		Inputs: []string{"demo"}, ObsidianVersion: "1.8.0",
 	}})
@@ -773,6 +791,7 @@ func TestTargetedUpdateAppliesExactDeclaredVersion(t *testing.T) {
 
 	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
 		Official: &fakeOfficialResolver{release: officialRelease("demo", "3.0.0")}, GitHub: github, Stager: stager, Change: &fakeChanger{stager: stager},
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
 	}).Run(context.Background(), model.Operation{Kind: model.OperationUpdate, Update: model.UpdateOptions{
 		Inputs: []string{"demo@2.0.0"}, ObsidianVersion: "1.8.0",
 	}})
@@ -801,7 +820,10 @@ func TestBareUpdateIncludesInstalledOfficialPluginsAndExcludesGitHubOnly(t *test
 		"official": officialRelease("official", "2.0.0"), "official-github": officialRelease("official-github", "2.0.0"),
 	}}
 
-	report, err := manager.NewWithConfig(vaultRoot, manager.Config{Official: official, Stager: stager, Change: changer}).Run(context.Background(), model.Operation{
+	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
+		Official: official, Stager: stager, Change: changer,
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
+	}).Run(context.Background(), model.Operation{
 		Kind: model.OperationUpdate, Update: model.UpdateOptions{ObsidianVersion: "1.8.0"},
 	})
 	if err != nil {

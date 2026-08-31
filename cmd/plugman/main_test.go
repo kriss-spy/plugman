@@ -2,12 +2,37 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kriss-spy/plugman/internal/manager"
+	"github.com/kriss-spy/plugman/internal/obsidian"
 )
+
+func TestMain(m *testing.M) {
+	configHook = func(config manager.Config) manager.Config {
+		config.LiveClient = &cliTestLiveClient{probeErr: obsidian.ErrObsidianNotRunning}
+		return config
+	}
+	os.Exit(m.Run())
+}
+
+type cliTestLiveClient struct{ probeErr error }
+
+func (f *cliTestLiveClient) Probe(context.Context) error { return f.probeErr }
+
+func (f *cliTestLiveClient) Inspect(context.Context, string) (obsidian.PluginState, error) {
+	return obsidian.PluginState{}, nil
+}
+
+func (*cliTestLiveClient) Disable(context.Context, string) error { return nil }
+func (*cliTestLiveClient) Unload(context.Context, string) error  { return nil }
+func (*cliTestLiveClient) Reload(context.Context, string) error  { return nil }
+func (*cliTestLiveClient) Enable(context.Context, string) error  { return nil }
 
 func TestListJSONUsesManagerReportSchema(t *testing.T) {
 	vaultRoot := t.TempDir()

@@ -19,6 +19,10 @@ import (
 
 var version = "dev"
 
+// configHook lets tests inject a deterministic Obsidian live client so CLI
+// tests never probe the real desktop application.
+var configHook = func(config manager.Config) manager.Config { return config }
+
 func main() {
 	vaultRoot, err := os.Getwd()
 	if err != nil {
@@ -131,9 +135,9 @@ func runInstall(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "plugman install requires at least one plugin ID, Plugin List path, or GitHub URL")
 		return 2
 	}
-	result, err := manager.NewWithConfig(vaultRoot, manager.Config{PlanReady: func(result model.Report) error {
+	result, err := manager.NewWithConfig(vaultRoot, configHook(manager.Config{PlanReady: func(result model.Report) error {
 		return report.Plan(stdout, result)
-	}}).Run(context.Background(), model.Operation{
+	}})).Run(context.Background(), model.Operation{
 		Kind:    model.OperationInstall,
 		Install: model.InstallOptions{Inputs: flags.Args(), Enable: *enable, AllowDowngrade: *allowDowngrade, DryRun: *dryRun},
 	})
@@ -162,9 +166,9 @@ func runUpdate(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 	if exitCode, done := parseFlags(flags, args); done {
 		return exitCode
 	}
-	result, err := manager.NewWithConfig(vaultRoot, manager.Config{PlanReady: func(result model.Report) error {
+	result, err := manager.NewWithConfig(vaultRoot, configHook(manager.Config{PlanReady: func(result model.Report) error {
 		return report.Plan(stdout, result)
-	}}).Run(context.Background(), model.Operation{
+	}})).Run(context.Background(), model.Operation{
 		Kind:   model.OperationUpdate,
 		Update: model.UpdateOptions{Inputs: flags.Args(), AllowDowngrade: *allowDowngrade, DryRun: *dryRun},
 	})
@@ -233,7 +237,7 @@ func runUninstall(args []string, vaultRoot string, stdin io.Reader, stdout, stde
 	operation := model.Operation{Kind: model.OperationUninstall, Uninstall: model.UninstallOptions{
 		IDs: flags.Args(), KeepData: *keepData, Yes: *yes, DryRun: *dryRun,
 	}}
-	configured := manager.NewWithConfig(vaultRoot, manager.Config{PlanReady: func(result model.Report) error { return report.Plan(stdout, result) }})
+	configured := manager.NewWithConfig(vaultRoot, configHook(manager.Config{PlanReady: func(result model.Report) error { return report.Plan(stdout, result) }}))
 	result, err := configured.Run(context.Background(), operation)
 	var confirmation *model.ConfirmationRequiredError
 	if errors.As(err, &confirmation) {
