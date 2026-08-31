@@ -51,22 +51,6 @@ case "$install_dir" in
   *) printf 'install.sh: install directory must be absolute: %s\n' "$install_dir" >&2; exit 1 ;;
 esac
 
-directory="$install_dir"
-while [ ! -e "$directory" ]; do
-  parent=$(dirname "$directory")
-  [ "$parent" != "$directory" ] || break
-  directory=$parent
-done
-directory=$(cd "$directory" && pwd -P)
-while :; do
-  if [ -d "$directory/.obsidian" ]; then
-    printf 'install.sh: refusing to install inside Obsidian Vault: %s\n' "$directory" >&2
-    exit 1
-  fi
-  [ "$directory" = "/" ] && break
-  directory=$(dirname "$directory")
-done
-
 case "$(uname -s)" in
   Linux|linux) os="linux" ;;
   Darwin|darwin) os="darwin" ;;

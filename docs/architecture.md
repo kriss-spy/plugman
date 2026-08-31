@@ -27,7 +27,7 @@ The application is a modular monolith. There is no daemon, local server, plugin 
 
 Go is the implementation language. It supports one executable per desktop platform, direct cross-compilation, bounded concurrency, subprocess control, and the HTTP/JSON/filesystem work Plugman requires without imposing a runtime installation on users.
 
-Release-bound shell and PowerShell installers place the executable in a user-level `PATH` directory, verify it against the release checksum, and never write the executable into a Vault or require administrator access. `go install` is supported as a secondary developer path.
+Release-bound shell and PowerShell installers place the executable in a user-level `PATH` directory, verify it against the release checksum, and require no administrator access. The destination is the user's choice; the installers do not police where it points. `go install` is supported as a secondary developer path.
 
 The initial implementation should prefer the Go standard library. A third-party dependency is justified only when it removes protocol or operating-system complexity that would otherwise leak across modules, such as portable advisory file locking or well-tested semantic-version comparison.
 

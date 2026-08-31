@@ -93,25 +93,25 @@ func TestReleaseBoundUnixInstallerDoesNotResolveLatest(t *testing.T) {
 	}
 }
 
-func TestUnixInstallerRefusesDestinationInsideVault(t *testing.T) {
+func TestUnixInstallerAllowsDestinationInsideVaultTree(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX installer")
 	}
 	home, fixtures, fakeBin := unixInstallerFixture(t, false)
 	vaultRoot := filepath.Join(home, "vault")
-	if err := os.MkdirAll(filepath.Join(vaultRoot, ".obsidian"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(vaultRoot, ".obsidian", "plugins"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	installDir := filepath.Join(vaultRoot, "bin")
 	command := exec.Command("sh", "install.sh", "--version", "v9.8.7", "--bin-dir", installDir)
 	command.Dir = projectRoot(t)
 	command.Env = installerEnv(home, fixtures, fakeBin)
-	output, err := command.CombinedOutput()
-	if err == nil || !strings.Contains(string(output), "Obsidian Vault") {
-		t.Fatalf("install.sh error = %v, output = %q", err, output)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("install.sh: %v\n%s", err, output)
 	}
-	if _, statErr := os.Stat(filepath.Join(installDir, "plugman")); !os.IsNotExist(statErr) {
-		t.Fatalf("Vault executable exists after refusal: %v", statErr)
+	installed, err := os.ReadFile(filepath.Join(installDir, "plugman"))
+	if err != nil || string(installed) != "verified plugman binary\n" {
+		t.Fatalf("installed binary = %q, %v", installed, err)
 	}
 }
 

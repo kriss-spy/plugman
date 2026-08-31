@@ -124,7 +124,6 @@ function Save-ReleaseFile {
 
 function Add-UserPathEntry {
     param([string] $Directory)
-
     $fullDirectory = [System.IO.Path]::GetFullPath($Directory).TrimEnd('\')
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     $entries = @()
@@ -166,21 +165,6 @@ function Add-UserPathEntry {
     return -not $alreadyPresent
 }
 
-function Assert-NotInsideVault {
-    param([string] $Directory)
-
-    $current = [System.IO.DirectoryInfo]::new($Directory)
-    while ($null -ne $current) {
-        if ($current.Exists -and ($current.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
-            throw "Refusing installer path containing link or junction '$($current.FullName)'."
-        }
-        if ([System.IO.Directory]::Exists((Join-Path $current.FullName ".obsidian"))) {
-            throw "Refusing to install inside Obsidian Vault '$($current.FullName)'."
-        }
-        $current = $current.Parent
-    }
-}
-
 try {
     if ($env:OS -ne "Windows_NT") {
         throw "This installer supports Windows only."
@@ -198,7 +182,6 @@ try {
         $InstallDir = Join-Path $localAppData "Programs\plugman\bin"
     }
     $InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
-    Assert-NotInsideVault $InstallDir
 
     $resolvedVersion = Resolve-PlugmanVersion $Version
     $architecture = Get-PlugmanArchitecture
@@ -227,7 +210,6 @@ try {
         }
 
         New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-        Assert-NotInsideVault $InstallDir
         $destination = Join-Path $InstallDir "plugman.exe"
         $stagedDestination = Join-Path $InstallDir (".plugman-" + [Guid]::NewGuid().ToString("N") + ".exe")
         $backupDestination = Join-Path $InstallDir (".plugman-backup-" + [Guid]::NewGuid().ToString("N") + ".exe")
