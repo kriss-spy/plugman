@@ -490,14 +490,18 @@ func validateRootManifest(manifest Manifest, officialID string) error {
 	if manifest.ID != officialID {
 		return fmt.Errorf("manifest ID %q does not match official ID %q", manifest.ID, officialID)
 	}
-	if manifest.Name == "" || manifest.Version == "" || manifest.MinAppVersion == "" {
-		return errors.New("manifest is missing name, version, or minAppVersion")
+	if manifest.Name == "" || manifest.Version == "" {
+		return errors.New("manifest is missing name or version")
 	}
 	if _, err := parseSemver(manifest.Version); err != nil {
 		return fmt.Errorf("invalid manifest version: %w", err)
 	}
-	if _, err := parseSemver(manifest.MinAppVersion); err != nil {
-		return fmt.Errorf("invalid manifest minAppVersion: %w", err)
+	// minAppVersion is optional in Obsidian manifests; an absent value means
+	// the plugin declares no minimum and is compatible with every release.
+	if manifest.MinAppVersion != "" {
+		if _, err := parseSemver(manifest.MinAppVersion); err != nil {
+			return fmt.Errorf("invalid manifest minAppVersion: %w", err)
+		}
 	}
 	return nil
 }

@@ -51,6 +51,29 @@ func TestOfficialResolverUsesCanonicalTransferAndCompatibleRootWithoutVersions(t
 	assertNeverDownloadedPluginCode(t, doer.requests)
 }
 
+func TestOfficialResolverAcceptsManifestWithoutMinAppVersion(t *testing.T) {
+	t.Parallel()
+
+	manifestAsset := "https://github.com/acme/example/releases/download/1.0.0/manifest.json"
+	doer := &recordingDoer{responses: map[string]fakeResponse{
+		officialRegistryURL:                                {body: `[{"id":"example","name":"Example","repo":"acme/example"}]`},
+		"https://api.test/repos/acme/example":              {body: `{"full_name":"acme/example"}`},
+		"https://raw.test/acme/example/HEAD/manifest.json": {body: `{"id":"example","name":"Example","version":"1.0.0"}`},
+		"https://api.test/repos/acme/example/releases/tags/1.0.0": {body: `{"tag_name":"1.0.0","html_url":"https://github.com/acme/example/releases/tag/1.0.0","assets":[
+			{"name":"manifest.json","browser_download_url":"https://github.com/acme/example/releases/download/1.0.0/manifest.json"},
+			{"name":"main.js","browser_download_url":"https://github.com/acme/example/releases/download/1.0.0/main.js"}]}`},
+		manifestAsset: {body: `{"id":"example","name":"Example","version":"1.0.0"}`},
+	}}
+
+	release, err := newOfficialTestResolver(doer).Resolve(context.Background(), "example", Target{ObsidianVersion: "1.8.0"})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if release.PluginID != "example" || release.Version != "1.0.0" || release.MinimumObsidianVersion != "" {
+		t.Fatalf("release = %#v", release)
+	}
+}
+
 func TestOfficialResolverSelectsGreatestCompatibleSparseFallback(t *testing.T) {
 	t.Parallel()
 

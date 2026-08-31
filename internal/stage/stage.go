@@ -319,9 +319,6 @@ func validateRelease(release source.Release) error {
 	if strings.TrimSpace(release.Version) == "" {
 		return errors.New("validate release: version is required")
 	}
-	if strings.TrimSpace(release.MinimumObsidianVersion) == "" {
-		return errors.New("validate release: minimum Obsidian version is required")
-	}
 	if release.Assets.Manifest.Name == "" || release.Assets.Manifest.URL == "" || release.Assets.MainJS.Name == "" || release.Assets.MainJS.URL == "" {
 		return errors.New("validate release: manifest.json and main.js asset references are required")
 	}

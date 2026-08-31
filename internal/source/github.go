@@ -263,8 +263,8 @@ func (r *GitHubResolver) validateRelease(ctx context.Context, repository string,
 }
 
 func validateGitHubManifest(manifest Manifest, tag string) error {
-	if !validPluginID(manifest.ID) || manifest.Name == "" || manifest.Version == "" || manifest.MinAppVersion == "" {
-		return errors.New("manifest is missing id, name, version, or minAppVersion")
+	if !validPluginID(manifest.ID) || manifest.Name == "" || manifest.Version == "" {
+		return errors.New("manifest is missing id, name, or version")
 	}
 	version, err := parseSemver(manifest.Version)
 	if err != nil {
@@ -273,9 +273,12 @@ func validateGitHubManifest(manifest Manifest, tag string) error {
 	if manifest.Version != tag || version.original != tag {
 		return fmt.Errorf("manifest version %q does not exactly match release tag %q", manifest.Version, tag)
 	}
-	_, err = parseSemver(manifest.MinAppVersion)
-	if err != nil {
-		return fmt.Errorf("invalid manifest minAppVersion: %w", err)
+	// minAppVersion is optional in Obsidian manifests; an absent value means
+	// the plugin declares no minimum and is compatible with every release.
+	if manifest.MinAppVersion != "" {
+		if _, err := parseSemver(manifest.MinAppVersion); err != nil {
+			return fmt.Errorf("invalid manifest minAppVersion: %w", err)
+		}
 	}
 	return nil
 }
