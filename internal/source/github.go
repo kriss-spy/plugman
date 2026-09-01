@@ -263,8 +263,8 @@ func (r *GitHubResolver) validateRelease(ctx context.Context, repository string,
 }
 
 func validateGitHubManifest(manifest Manifest, tag string) error {
-	if !validPluginID(manifest.ID) || manifest.Name == "" || manifest.Version == "" {
-		return errors.New("manifest is missing id, name, or version")
+	if missing := missingManifestFields(manifest); missing != "" {
+		return fmt.Errorf("manifest is missing %s", missing)
 	}
 	version, err := parseSemver(manifest.Version)
 	if err != nil {
@@ -281,6 +281,22 @@ func validateGitHubManifest(manifest Manifest, tag string) error {
 		}
 	}
 	return nil
+}
+
+// missingManifestFields reports the required manifest fields that are absent.
+// It returns "" when id, name, and version are all present and valid.
+func missingManifestFields(manifest Manifest) string {
+	var missing []string
+	if !validPluginID(manifest.ID) {
+		missing = append(missing, "id")
+	}
+	if manifest.Name == "" {
+		missing = append(missing, "name")
+	}
+	if manifest.Version == "" {
+		missing = append(missing, "version")
+	}
+	return strings.Join(missing, ", ")
 }
 
 func validPluginID(value string) bool {

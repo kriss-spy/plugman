@@ -641,7 +641,7 @@ func (m *manager) mutate(ctx context.Context, batch change.Batch, plugins []mode
 	for _, declaration := range declarations {
 		release, pluginSource, resolveErr := m.resolveDeclaration(ctx, declaration, options.obsidianVersion)
 		if resolveErr != nil {
-			return model.Report{}, resolveErr
+			return model.Report{}, fmt.Errorf("resolve %s: %w", declaration.Origin.Input, resolveErr)
 		}
 		if index, duplicate := resolvedIndexes[release.PluginID]; duplicate {
 			existing := resolved[index]

@@ -491,7 +491,7 @@ func validateRootManifest(manifest Manifest, officialID string) error {
 		return fmt.Errorf("manifest ID %q does not match official ID %q", manifest.ID, officialID)
 	}
 	if manifest.Name == "" || manifest.Version == "" {
-		return errors.New("manifest is missing name or version")
+		return fmt.Errorf("manifest is missing %s", missingManifestFields(manifest))
 	}
 	if _, err := parseSemver(manifest.Version); err != nil {
 		return fmt.Errorf("invalid manifest version: %w", err)
