@@ -357,6 +357,32 @@ func TestInstallDryRunPerformsSafeRuntimePreflight(t *testing.T) {
 	}
 }
 
+func TestInstallFallsBackToClosedVaultWhenObsidianIsOnAnotherVault(t *testing.T) {
+	vaultRoot := newVault(t)
+	stager := &fakeStager{t: t}
+	changer := &fakeChanger{stager: stager}
+	var warnings []string
+	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
+		Official: &fakeOfficialResolver{release: officialRelease("demo", "1.0.0")}, Stager: stager, Change: changer,
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianOtherVault},
+		Warn:       func(msg string) { warnings = append(warnings, msg) },
+	}).Run(context.Background(), model.Operation{Kind: model.OperationInstall, Install: model.InstallOptions{
+		Inputs: []string{"demo"}, ObsidianVersion: "1.8.0",
+	}})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if changer.liveCalls != 0 {
+		t.Fatalf("live coordination attempted for a different-vault Obsidian: liveCalls = %d", changer.liveCalls)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "different vault") {
+		t.Fatalf("warnings = %v", warnings)
+	}
+	if report.Category != model.ResultSuccess {
+		t.Fatalf("report category = %v, want success", report.Category)
+	}
+}
+
 func TestInstallClassifiesInputErrorAsPreflightFailure(t *testing.T) {
 	vaultRoot := newVault(t)
 	report, err := manager.New(vaultRoot).Run(context.Background(), model.Operation{
@@ -554,7 +580,7 @@ func TestInstallUsesClosedChangeEngineOnlyWhenProbeConfirmsStopped(t *testing.T)
 	}
 }
 
-func TestInstallRefusesMutationWhenProductionCLISelectsAnotherVault(t *testing.T) {
+func TestInstallFallsBackToClosedVaultWhenProductionCLISelectsAnotherVault(t *testing.T) {
 	root := t.TempDir()
 	vaultRoot := filepath.Join(root, "target", "Notes")
 	otherVault := filepath.Join(root, "other", "Notes")
@@ -570,18 +596,20 @@ func TestInstallRefusesMutationWhenProductionCLISelectsAnotherVault(t *testing.T
 	})
 	stager := &fakeStager{t: t}
 	changer := &fakeChanger{stager: stager}
+	var warnings []string
 
 	_, err := manager.NewWithConfig(vaultRoot, manager.Config{
 		Official: &fakeOfficialResolver{release: officialRelease("demo", "1.0.0")},
 		Stager:   stager, Change: changer, LiveClient: live,
+		Warn: func(msg string) { warnings = append(warnings, msg) },
 	}).Run(context.Background(), model.Operation{Kind: model.OperationInstall, Install: model.InstallOptions{
 		Inputs: []string{"demo"}, ObsidianVersion: "1.8.0",
 	}})
-	if !errors.Is(err, obsidian.ErrCLIUnsupported) || changer.liveCalls != 0 || len(changer.requests) != 0 {
+	if err != nil || changer.liveCalls != 0 || len(changer.requests) != 1 {
 		t.Fatalf("err = %v, live calls = %d, changes = %#v", err, changer.liveCalls, changer.requests)
 	}
-	if _, statErr := os.Stat(filepath.Join(vaultRoot, ".obsidian", "plugins", "demo")); !os.IsNotExist(statErr) {
-		t.Fatalf("plugin filesystem was mutated: %v", statErr)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "different vault") {
+		t.Fatalf("warnings = %v", warnings)
 	}
 	if len(runner.commands) != 1 || !reflect.DeepEqual(runner.commands[0].Args, []string{"vault", "info=path"}) {
 		t.Fatalf("CLI commands = %+v; lifecycle command must not run", runner.commands)

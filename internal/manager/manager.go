@@ -34,6 +34,7 @@ type manager struct {
 	planReady  func(model.Report) error
 	liveClient obsidian.Client
 	session    func(obsidian.ChangePlan) change.RuntimeSession
+	warn       func(string)
 }
 
 // OfficialResolver is the remote seam used by info and official operations.
@@ -87,6 +88,9 @@ type Config struct {
 	PlanReady           func(model.Report) error
 	LiveClient          obsidian.Client
 	LiveSession         func(obsidian.ChangePlan) change.RuntimeSession
+	// Warn receives non-fatal diagnostics such as a skipped live
+	// coordination step. It may be nil.
+	Warn func(string)
 }
 
 // New creates a Manager rooted at the exact directory Plugman should manage.
@@ -133,7 +137,7 @@ func NewWithConfig(vaultRoot string, config Config) Manager {
 		coordinator := obsidian.NewCoordinator(liveClient)
 		session = func(plan obsidian.ChangePlan) change.RuntimeSession { return coordinator.Session(plan) }
 	}
-	return &manager{vaultRoot: vaultRoot, official: official, recognizer: recognizer, github: github, target: target, stager: stager, changer: changer, planReady: config.PlanReady, liveClient: liveClient, session: session}
+	return &manager{vaultRoot: vaultRoot, official: official, recognizer: recognizer, github: github, target: target, stager: stager, changer: changer, planReady: config.PlanReady, liveClient: liveClient, session: session, warn: config.Warn}
 }
 
 type resolvingRecognizer struct{ resolver OfficialResolver }
@@ -802,6 +806,12 @@ func (m *manager) prepareRuntime(ctx context.Context, changes []runtimeChange) (
 	}
 	if err := m.liveClient.Probe(ctx); err != nil {
 		if errors.Is(err, obsidian.ErrObsidianNotRunning) {
+			return false, nil, nil
+		}
+		if errors.Is(err, obsidian.ErrObsidianOtherVault) {
+			if m.warn != nil {
+				m.warn("Obsidian is open on a different vault; applying changes without live coordination")
+			}
 			return false, nil, nil
 		}
 		return false, nil, fmt.Errorf("cannot safely coordinate running Obsidian: %w", err)

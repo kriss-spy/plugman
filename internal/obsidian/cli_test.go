@@ -46,8 +46,8 @@ func TestCLIClientRefusesUncertainTargetWhenAnotherVaultIsSelected(t *testing.T)
 	})
 
 	err := client.Probe(context.Background())
-	if !errors.Is(err, obsidian.ErrCLIUnsupported) {
-		t.Fatalf("Probe error = %v, want exact-Vault refusal", err)
+	if !errors.Is(err, obsidian.ErrObsidianOtherVault) {
+		t.Fatalf("Probe error = %v, want other-Vault refusal", err)
 	}
 	if len(runner.commands) != 1 || !reflect.DeepEqual(runner.commands[0].Args, []string{"vault", "info=path"}) {
 		t.Fatalf("commands = %+v; only read-only Vault identity verification is allowed", runner.commands)

@@ -137,7 +137,7 @@ func runInstall(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 	}
 	result, err := manager.NewWithConfig(vaultRoot, configHook(manager.Config{PlanReady: func(result model.Report) error {
 		return report.Plan(stdout, result)
-	}})).Run(context.Background(), model.Operation{
+	}, Warn: func(msg string) { fmt.Fprintln(stderr, msg) }})).Run(context.Background(), model.Operation{
 		Kind:    model.OperationInstall,
 		Install: model.InstallOptions{Inputs: flags.Args(), Enable: *enable, AllowDowngrade: *allowDowngrade, DryRun: *dryRun},
 	})
@@ -169,7 +169,7 @@ func runUpdate(args []string, vaultRoot string, stdout, stderr io.Writer) int {
 	}
 	result, err := manager.NewWithConfig(vaultRoot, configHook(manager.Config{PlanReady: func(result model.Report) error {
 		return report.Plan(stdout, result)
-	}})).Run(context.Background(), model.Operation{
+	}, Warn: func(msg string) { fmt.Fprintln(stderr, msg) }})).Run(context.Background(), model.Operation{
 		Kind:   model.OperationUpdate,
 		Update: model.UpdateOptions{Inputs: flags.Args(), EnabledOnly: *enabledOnly, AllowDowngrade: *allowDowngrade, DryRun: *dryRun},
 	})
@@ -239,7 +239,7 @@ func runUninstall(args []string, vaultRoot string, stdin io.Reader, stdout, stde
 	operation := model.Operation{Kind: model.OperationUninstall, Uninstall: model.UninstallOptions{
 		IDs: flags.Args(), KeepData: *keepData, Yes: *yes, DryRun: *dryRun,
 	}}
-	configured := manager.NewWithConfig(vaultRoot, configHook(manager.Config{PlanReady: func(result model.Report) error { return report.Plan(stdout, result) }}))
+	configured := manager.NewWithConfig(vaultRoot, configHook(manager.Config{PlanReady: func(result model.Report) error { return report.Plan(stdout, result) }, Warn: func(msg string) { fmt.Fprintln(stderr, msg) }}))
 	result, err := configured.Run(context.Background(), operation)
 	var confirmation *model.ConfirmationRequiredError
 	if errors.As(err, &confirmation) {

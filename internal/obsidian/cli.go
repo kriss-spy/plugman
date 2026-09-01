@@ -19,6 +19,10 @@ var (
 	ErrCLIUnsupported = errors.New("Obsidian CLI unsupported")
 	// ErrObsidianNotRunning means a non-launching check confirmed the app is stopped.
 	ErrObsidianNotRunning = errors.New("Obsidian is not running")
+	// ErrObsidianOtherVault means Obsidian is running but focused on a Vault
+	// other than the exact target, so live coordination does not apply to the
+	// target Vault.
+	ErrObsidianOtherVault = errors.New("Obsidian is open on a different Vault")
 )
 
 // Command describes one direct executable invocation. Arguments are passed
@@ -117,7 +121,7 @@ func (c *CLIClient) checkRuntime(ctx context.Context) error {
 		return fmt.Errorf("%w: verify selected Vault: %v", ErrCLIUnsupported, err)
 	}
 	if !same {
-		return fmt.Errorf("%w: CLI selected a different Vault than the exact target Vault Root", ErrCLIUnsupported)
+		return fmt.Errorf("%w: CLI selected a different Vault than the exact target Vault Root", ErrObsidianOtherVault)
 	}
 	return nil
 }
