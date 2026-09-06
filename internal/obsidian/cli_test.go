@@ -149,7 +149,7 @@ func TestCLIClientProbeRejectsMissingManifestRefreshBeforeMutation(t *testing.T)
 	if !errors.Is(err, obsidian.ErrCLIUnsupported) {
 		t.Fatalf("Probe error = %v, want unsupported runtime", err)
 	}
-	wantArgs := [][]string{{"vault", "info=path"}, {"eval", "code=await app.plugins.loadManifests();true"}}
+	wantArgs := [][]string{{"vault", "info=path"}, {"eval", "code=(async()=>{await app.plugins.loadManifests();return true})()"}}
 	if len(runner.commands) != len(wantArgs) {
 		t.Fatalf("commands = %+v", runner.commands)
 	}
@@ -246,7 +246,7 @@ func TestCLIClientReportsRuntimeStateWithoutReadingPluginFiles(t *testing.T) {
 
 func TestCLIClientMapsPluginLifecycleCommandsWithoutShell(t *testing.T) {
 	vault := t.TempDir()
-	runner := &fakeCommandRunner{available: true}
+	runner := &fakeCommandRunner{available: true, outputs: []string{"", "=> true", "=> true"}}
 	client := obsidian.NewCLIClient(obsidian.CLIConfig{
 		Executable: "obsidian-custom", VaultPath: vault, Runner: runner,
 		Detector: staticDetector{status: obsidian.RuntimeStatus{Running: true, CLISupported: true, SafeToInvoke: true}},
@@ -271,8 +271,8 @@ func TestCLIClientMapsPluginLifecycleCommandsWithoutShell(t *testing.T) {
 
 	wantArgs := [][]string{
 		{"vault", "info=path"}, {"plugin:disable", "id=sample", "filter=community"},
-		{"vault", "info=path"}, {"eval", `code=await app.plugins.unloadPlugin("sample")`},
-		{"vault", "info=path"}, {"eval", "code=await app.plugins.loadManifests();true"},
+		{"vault", "info=path"}, {"eval", `code=(async()=>{await app.plugins.unloadPlugin("sample");return true})()`},
+		{"vault", "info=path"}, {"eval", "code=(async()=>{await app.plugins.loadManifests();return true})()"},
 		{"vault", "info=path"}, {"plugin:reload", "id=sample"},
 		{"vault", "info=path"}, {"plugin:enable", "id=sample", "filter=community"},
 	}
@@ -283,6 +283,33 @@ func TestCLIClientMapsPluginLifecycleCommandsWithoutShell(t *testing.T) {
 		if command.Executable != "obsidian-custom" || command.Dir != vault || !reflect.DeepEqual(command.Args, wantArgs[i]) {
 			t.Errorf("command %d = %+v, want args %v", i, command, wantArgs[i])
 		}
+	}
+}
+
+func TestCLIClientRejectsExitZeroEvalErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*obsidian.CLIClient) error
+	}{
+		{name: "unload", call: func(client *obsidian.CLIClient) error {
+			return client.Unload(context.Background(), "sample")
+		}},
+		{name: "refresh", call: func(client *obsidian.CLIClient) error {
+			return client.Refresh(context.Background())
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &fakeCommandRunner{available: true, outputs: []string{"Error: operation failed"}}
+			client := obsidian.NewCLIClient(obsidian.CLIConfig{
+				VaultPath: t.TempDir(), Runner: runner,
+				Detector: staticDetector{status: obsidian.RuntimeStatus{Running: true, CLISupported: true, SafeToInvoke: true}},
+			})
+
+			if err := test.call(client); err == nil {
+				t.Fatal("operation succeeded despite exit-zero eval error output")
+			}
+		})
 	}
 }
 

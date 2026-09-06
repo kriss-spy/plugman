@@ -94,8 +94,7 @@ func (c *CLIClient) Probe(ctx context.Context) error {
 		}
 		return fmt.Errorf("%w: probe plugin manifest refresh: %v", ErrCLIUnsupported, err)
 	}
-	var supported bool
-	if err := decodeEvalJSON(output, &supported); err != nil || !supported {
+	if err := requireEvalCompletion(output); err != nil {
 		return fmt.Errorf("%w: plugin manifest refresh did not complete", ErrCLIUnsupported)
 	}
 	return nil
@@ -189,6 +188,17 @@ func decodeEvalJSON(output string, destination any) error {
 	return json.Unmarshal([]byte(value), destination)
 }
 
+func requireEvalCompletion(output string) error {
+	var completed bool
+	if err := decodeEvalJSON(output, &completed); err != nil {
+		return err
+	}
+	if !completed {
+		return errors.New("operation returned false")
+	}
+	return nil
+}
+
 func (c *CLIClient) Disable(ctx context.Context, pluginID string) error {
 	_, err := c.run(ctx, "plugin:disable", "id="+pluginID, "filter=community")
 	return err
@@ -199,17 +209,29 @@ func (c *CLIClient) Unload(ctx context.Context, pluginID string) error {
 	if err != nil {
 		return fmt.Errorf("encode plugin ID: %w", err)
 	}
-	_, err = c.run(ctx, "eval", "code=await app.plugins.unloadPlugin("+string(id)+")")
-	return err
+	output, err := c.run(ctx, "eval", "code=(async()=>{await app.plugins.unloadPlugin("+string(id)+");return true})()")
+	if err != nil {
+		return err
+	}
+	if err := requireEvalCompletion(output); err != nil {
+		return fmt.Errorf("unload plugin %q did not complete: %w", pluginID, err)
+	}
+	return nil
 }
 
 func (c *CLIClient) Refresh(ctx context.Context) error {
-	_, err := c.refreshManifests(ctx)
-	return err
+	output, err := c.refreshManifests(ctx)
+	if err != nil {
+		return err
+	}
+	if err := requireEvalCompletion(output); err != nil {
+		return fmt.Errorf("plugin manifest refresh did not complete: %w", err)
+	}
+	return nil
 }
 
 func (c *CLIClient) refreshManifests(ctx context.Context) (string, error) {
-	return c.run(ctx, "eval", "code=await app.plugins.loadManifests();true")
+	return c.run(ctx, "eval", "code=(async()=>{await app.plugins.loadManifests();return true})()")
 }
 
 func (c *CLIClient) Reload(ctx context.Context, pluginID string) error {
