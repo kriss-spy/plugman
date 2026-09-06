@@ -195,23 +195,31 @@ func TestCLIClientInspectsPluginThroughTargetedVault(t *testing.T) {
 }
 
 func TestCLIClientInspectStripsCLIReturnValuePrefix(t *testing.T) {
-	vault := t.TempDir()
-	runner := &fakeCommandRunner{
-		available: true,
-		outputs:   []string{`=> {"present":true,"id":"sample","version":"1.2.3","enabled":true,"loaded":true}`},
+	tests := []struct {
+		name   string
+		output string
+	}{
+		{name: "standard", output: `=> {"present":true,"id":"sample","version":"1.2.3","enabled":false,"loaded":false}`},
+		{name: "verbose", output: `==> {"present":true,"id":"sample","version":"1.2.3","enabled":false,"loaded":false}`},
 	}
-	client := obsidian.NewCLIClient(obsidian.CLIConfig{
-		VaultPath: vault, Runner: runner,
-		Detector: staticDetector{status: obsidian.RuntimeStatus{Running: true, CLISupported: true, SafeToInvoke: true}},
-	})
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			vault := t.TempDir()
+			runner := &fakeCommandRunner{available: true, outputs: []string{test.output}}
+			client := obsidian.NewCLIClient(obsidian.CLIConfig{
+				VaultPath: vault, Runner: runner,
+				Detector: staticDetector{status: obsidian.RuntimeStatus{Running: true, CLISupported: true, SafeToInvoke: true}},
+			})
 
-	state, err := client.Inspect(context.Background(), "sample")
-	if err != nil {
-		t.Fatalf("Inspect: %v", err)
-	}
-	want := obsidian.PluginState{Present: true, ID: "sample", Version: "1.2.3", Enabled: true, Loaded: true}
-	if state != want {
-		t.Fatalf("state = %+v, want %+v", state, want)
+			state, err := client.Inspect(context.Background(), "sample")
+			if err != nil {
+				t.Fatalf("Inspect: %v", err)
+			}
+			want := obsidian.PluginState{Present: true, ID: "sample", Version: "1.2.3"}
+			if state != want {
+				t.Fatalf("state = %+v, want %+v", state, want)
+			}
+		})
 	}
 }
 

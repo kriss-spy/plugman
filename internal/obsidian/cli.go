@@ -177,12 +177,15 @@ func (c *CLIClient) Inspect(ctx context.Context, pluginID string) (PluginState, 
 	return state, nil
 }
 
-// decodeEvalJSON strips the Obsidian CLI's "=> " return-value prefix before
-// decoding the JSON value an eval script emitted.
+// decodeEvalJSON strips the Obsidian CLI's return-value marker before decoding
+// the JSON value an eval script emitted. CLI versions use one or more equals
+// signs before the closing angle bracket.
 func decodeEvalJSON(output string, destination any) error {
 	value := strings.TrimSpace(output)
-	value = strings.TrimPrefix(value, "=>")
-	value = strings.TrimSpace(value)
+	afterEquals := strings.TrimLeft(value, "=")
+	if len(afterEquals) != len(value) && strings.HasPrefix(afterEquals, ">") {
+		value = strings.TrimSpace(afterEquals[1:])
+	}
 	return json.Unmarshal([]byte(value), destination)
 }
 
