@@ -1632,6 +1632,7 @@ func (f *fakeLiveClient) Inspect(_ context.Context, id string) (obsidian.PluginS
 }
 func (*fakeLiveClient) Disable(context.Context, string) error { return nil }
 func (*fakeLiveClient) Unload(context.Context, string) error  { return nil }
+func (*fakeLiveClient) Refresh(context.Context) error         { return nil }
 func (*fakeLiveClient) Reload(context.Context, string) error  { return nil }
 func (*fakeLiveClient) Enable(context.Context, string) error  { return nil }
 

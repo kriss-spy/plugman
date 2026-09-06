@@ -41,20 +41,20 @@ func TestLiveChangePreservesPriorEnabledState(t *testing.T) {
 	if client.state != wantState {
 		t.Fatalf("runtime state = %+v, want %+v", client.state, wantState)
 	}
-	wantCalls := []string{"probe", "inspect", "inspect", "disable", "reload", "enable", "inspect"}
+	wantCalls := []string{"probe", "inspect", "inspect", "disable", "refresh", "reload", "enable", "inspect"}
 	if !reflect.DeepEqual(client.calls, wantCalls) {
 		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
 	}
 	assertNoLiveRecovery(t, vault)
 }
 
-func TestLiveChangeInstallsNewPluginDisabled(t *testing.T) {
+func TestLiveChangeInstallsNewPluginDisabledAfterManifestRefresh(t *testing.T) {
 	vault := liveVault(t, nil)
 	plugin := filepath.Join(vault, ".obsidian", "plugins", "demo")
 	stage := filepath.Join(vault, "stage")
-	livePlugin(t, stage, "2.0.0")
+	livePlugin(t, stage, "1.5.3")
 	client := newFakeClient(obsidian.PluginState{})
-	client.onReload = func() {
+	client.onRefresh = func() {
 		client.state = stateFromDisk(t, plugin, containsLive(enabledLive(t, vault), "demo"))
 	}
 
@@ -62,7 +62,7 @@ func TestLiveChangeInstallsNewPluginDisabled(t *testing.T) {
 		VaultRoot: vault, PluginID: "demo", Kind: change.Install, StagedDir: stage,
 		Enabled: change.PreserveEnabled,
 	}, obsidian.NewCoordinator(client).Session(obsidian.ChangePlan{
-		PluginID: "demo", PlannedState: obsidian.PluginState{}, TargetVersion: "2.0.0",
+		PluginID: "demo", PlannedState: obsidian.PluginState{}, TargetVersion: "1.5.3",
 	}))
 	if err != nil {
 		t.Fatalf("apply live change: %v", err)
@@ -70,7 +70,7 @@ func TestLiveChangeInstallsNewPluginDisabled(t *testing.T) {
 	if !outcome.Changed || client.state.Enabled || client.state.Loaded {
 		t.Fatalf("outcome = %+v, runtime state = %+v", outcome, client.state)
 	}
-	wantCalls := []string{"probe", "inspect", "inspect", "reload", "inspect"}
+	wantCalls := []string{"probe", "inspect", "inspect", "refresh", "inspect"}
 	if !reflect.DeepEqual(client.calls, wantCalls) {
 		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
 	}
@@ -248,7 +248,7 @@ func TestLiveChangeRestoresUninstallWhenRuntimeAbsenceCannotBeVerified(t *testin
 	if client.state != prior {
 		t.Fatalf("restored runtime state = %+v, want %+v", client.state, prior)
 	}
-	wantCalls := []string{"probe", "inspect", "inspect", "disable", "inspect", "reload", "enable", "inspect"}
+	wantCalls := []string{"probe", "inspect", "inspect", "disable", "inspect", "refresh", "reload", "enable", "inspect"}
 	if !reflect.DeepEqual(client.calls, wantCalls) {
 		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
 	}

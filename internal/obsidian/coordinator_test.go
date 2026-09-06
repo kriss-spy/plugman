@@ -31,7 +31,7 @@ func TestCoordinatorSafelyReplacesLoadedPlugin(t *testing.T) {
 	if !replaced {
 		t.Fatal("replacement callback was not invoked")
 	}
-	wantCalls := []string{"probe", "inspect", "inspect", "disable", "reload", "enable", "inspect"}
+	wantCalls := []string{"probe", "inspect", "inspect", "disable", "refresh", "reload", "enable", "inspect"}
 	if !reflect.DeepEqual(client.calls, wantCalls) {
 		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
 	}
@@ -64,7 +64,7 @@ func TestCoordinatorRestoresFilesAndRuntimeWhenReloadFails(t *testing.T) {
 	if !restored || !result.Restore.Attempted || !result.Restore.FilesRestored || !result.Restore.RuntimeRestored {
 		t.Fatalf("restore outcome = %+v, callback called = %v", result.Restore, restored)
 	}
-	wantCalls := []string{"probe", "inspect", "inspect", "disable", "reload", "reload", "enable", "inspect"}
+	wantCalls := []string{"probe", "inspect", "inspect", "disable", "refresh", "reload", "refresh", "reload", "enable", "inspect"}
 	if !reflect.DeepEqual(client.calls, wantCalls) {
 		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
 	}
@@ -94,7 +94,7 @@ func TestCoordinatorDoesNotReplaceWhenObsidianExitsDuringRecheck(t *testing.T) {
 func TestCoordinatorPreservesDisabledPluginState(t *testing.T) {
 	prior := obsidian.PluginState{Present: true, ID: "dataview", Version: "1.0.0"}
 	client := newFakeClient(prior)
-	client.onReload = func() {
+	client.onRefresh = func() {
 		client.state = obsidian.PluginState{Present: true, ID: "dataview", Version: "2.0.0"}
 	}
 
@@ -109,7 +109,31 @@ func TestCoordinatorPreservesDisabledPluginState(t *testing.T) {
 	if result.State.Enabled || result.State.Loaded {
 		t.Fatalf("disabled plugin was activated: %+v", result.State)
 	}
-	wantCalls := []string{"probe", "inspect", "inspect", "reload", "inspect"}
+	wantCalls := []string{"probe", "inspect", "inspect", "refresh", "inspect"}
+	if !reflect.DeepEqual(client.calls, wantCalls) {
+		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
+	}
+}
+
+func TestCoordinatorDoesNotReloadLoadedPluginWithoutExecutionPermission(t *testing.T) {
+	prior := obsidian.PluginState{Present: true, ID: "dataview", Version: "1.0.0", Loaded: true}
+	client := newFakeClient(prior)
+	client.onRefresh = func() {
+		client.state = obsidian.PluginState{Present: true, ID: "dataview", Version: "2.0.0"}
+	}
+
+	result, err := obsidian.NewCoordinator(client).Replace(context.Background(), obsidian.ReplaceRequest{
+		PluginID: "dataview", PlannedState: prior, TargetVersion: "2.0.0",
+		ReplaceFiles: func(context.Context) error { return nil },
+		RestoreFiles: func(context.Context) error { return nil },
+	})
+	if err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	if result.State.Enabled || result.State.Loaded {
+		t.Fatalf("plugin was executed without permission: %+v", result.State)
+	}
+	wantCalls := []string{"probe", "inspect", "inspect", "unload", "refresh", "inspect"}
 	if !reflect.DeepEqual(client.calls, wantCalls) {
 		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
 	}
@@ -117,7 +141,7 @@ func TestCoordinatorPreservesDisabledPluginState(t *testing.T) {
 
 func TestCoordinatorInstallsNewPluginDisabledByDefault(t *testing.T) {
 	client := newFakeClient(obsidian.PluginState{})
-	client.onReload = func() {
+	client.onRefresh = func() {
 		client.state = obsidian.PluginState{Present: true, ID: "dataview", Version: "2.0.0"}
 	}
 
@@ -132,7 +156,7 @@ func TestCoordinatorInstallsNewPluginDisabledByDefault(t *testing.T) {
 	if result.State.Enabled || result.State.Loaded {
 		t.Fatalf("new plugin was activated: %+v", result.State)
 	}
-	wantCalls := []string{"probe", "inspect", "inspect", "reload", "inspect"}
+	wantCalls := []string{"probe", "inspect", "inspect", "refresh", "inspect"}
 	if !reflect.DeepEqual(client.calls, wantCalls) {
 		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
 	}
@@ -143,7 +167,8 @@ func TestCoordinatorInstallsNewPluginDespiteQuiescedCache(t *testing.T) {
 	// but neither loaded nor enabled). A fresh install of the same ID must
 	// treat that phantom state as absent rather than a concurrent install.
 	client := newFakeClient(obsidian.PluginState{Present: true, ID: "dataview", Version: "1.0.0"})
-	client.onReload = func() {
+	client.onProbe = func() { client.state = obsidian.PluginState{} }
+	client.onRefresh = func() {
 		client.state = obsidian.PluginState{Present: true, ID: "dataview", Version: "2.0.0"}
 	}
 
@@ -158,7 +183,7 @@ func TestCoordinatorInstallsNewPluginDespiteQuiescedCache(t *testing.T) {
 	if result.State.Enabled || result.State.Loaded {
 		t.Fatalf("new plugin was activated: %+v", result.State)
 	}
-	wantCalls := []string{"probe", "inspect", "inspect", "reload", "inspect"}
+	wantCalls := []string{"probe", "inspect", "inspect", "refresh", "inspect"}
 	if !reflect.DeepEqual(client.calls, wantCalls) {
 		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
 	}
@@ -166,10 +191,7 @@ func TestCoordinatorInstallsNewPluginDespiteQuiescedCache(t *testing.T) {
 
 func TestCoordinatorRestoresAbsentStateWithoutReloadingRemovedPlugin(t *testing.T) {
 	client := newFakeClient(obsidian.PluginState{})
-	client.failOnce["reload"] = errors.New("reload failed")
-	client.onReload = func() {
-		client.state = obsidian.PluginState{Present: true, ID: "dataview", Version: "2.0.0"}
-	}
+	client.failOnce["refresh"] = errors.New("refresh failed")
 
 	result, err := obsidian.NewCoordinator(client).Replace(context.Background(), obsidian.ReplaceRequest{
 		PluginID: "dataview", PlannedState: obsidian.PluginState{}, TargetVersion: "2.0.0",
@@ -185,7 +207,67 @@ func TestCoordinatorRestoresAbsentStateWithoutReloadingRemovedPlugin(t *testing.
 	if !result.Restore.RuntimeRestored || result.Restore.Err != nil {
 		t.Fatalf("restore outcome = %+v", result.Restore)
 	}
-	wantCalls := []string{"probe", "inspect", "inspect", "reload", "inspect"}
+	wantCalls := []string{"probe", "inspect", "inspect", "refresh", "refresh", "inspect"}
+	if !reflect.DeepEqual(client.calls, wantCalls) {
+		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
+	}
+}
+
+func TestCoordinatorRestoresDisabledPluginWithoutReloading(t *testing.T) {
+	prior := obsidian.PluginState{Present: true, ID: "dataview", Version: "1.0.0"}
+	client := newFakeClient(prior)
+	refreshes := 0
+	client.onRefresh = func() {
+		refreshes++
+		if refreshes == 1 {
+			client.state = obsidian.PluginState{Present: true, ID: "dataview", Version: "2.0.0"}
+		} else {
+			client.state = prior
+		}
+	}
+	client.inspectErrAt = 3
+	client.inspectErr = errors.New("cannot verify replacement")
+
+	result, err := obsidian.NewCoordinator(client).Replace(context.Background(), obsidian.ReplaceRequest{
+		PluginID: "dataview", PlannedState: prior, TargetVersion: "2.0.0",
+		ReplaceFiles: func(context.Context) error { return nil },
+		RestoreFiles: func(context.Context) error { return nil },
+	})
+	if err == nil {
+		t.Fatal("expected verification failure")
+	}
+	if !result.Restore.RuntimeRestored || result.Restore.Err != nil {
+		t.Fatalf("restore outcome = %+v", result.Restore)
+	}
+	wantCalls := []string{"probe", "inspect", "inspect", "refresh", "inspect", "refresh", "inspect"}
+	if !reflect.DeepEqual(client.calls, wantCalls) {
+		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
+	}
+}
+
+func TestCoordinatorRejectsQuiescedManifestAfterRestoringAbsentPlugin(t *testing.T) {
+	client := newFakeClient(obsidian.PluginState{})
+	refreshes := 0
+	client.beforeRefresh = func() {
+		refreshes++
+		if refreshes == 1 {
+			client.state = obsidian.PluginState{Present: true, ID: "dataview", Version: "2.0.0"}
+		}
+	}
+	client.failOnce["refresh"] = errors.New("refresh failed")
+
+	result, err := obsidian.NewCoordinator(client).Replace(context.Background(), obsidian.ReplaceRequest{
+		PluginID: "dataview", PlannedState: obsidian.PluginState{}, TargetVersion: "2.0.0",
+		ReplaceFiles: func(context.Context) error { return nil },
+		RestoreFiles: func(context.Context) error { return nil },
+	})
+	if err == nil {
+		t.Fatal("expected refresh failure")
+	}
+	if result.Restore.RuntimeRestored || result.Restore.Err == nil {
+		t.Fatalf("restore incorrectly accepted cached state: %+v", result.Restore)
+	}
+	wantCalls := []string{"probe", "inspect", "inspect", "refresh", "refresh", "inspect"}
 	if !reflect.DeepEqual(client.calls, wantCalls) {
 		t.Fatalf("calls = %v, want %v", client.calls, wantCalls)
 	}
@@ -237,7 +319,9 @@ func TestUninstallCommitAcceptsQuiescedCachedManifest(t *testing.T) {
 type fakeClient struct {
 	state         obsidian.PluginState
 	calls         []string
+	onProbe       func()
 	onReload      func()
+	onRefresh     func()
 	fail          map[string]error
 	failOnce      map[string]error
 	inspected     int
@@ -245,6 +329,7 @@ type fakeClient struct {
 	inspectErr    error
 	beforeInspect func(int)
 	afterInspect  func(int)
+	beforeRefresh func()
 }
 
 func newFakeClient(state obsidian.PluginState) *fakeClient {
@@ -253,6 +338,9 @@ func newFakeClient(state obsidian.PluginState) *fakeClient {
 
 func (f *fakeClient) Probe(context.Context) error {
 	f.calls = append(f.calls, "probe")
+	if f.onProbe != nil {
+		f.onProbe()
+	}
 	return f.fail["probe"]
 }
 
@@ -288,6 +376,24 @@ func (f *fakeClient) Unload(context.Context, string) error {
 		return err
 	}
 	f.state.Loaded = false
+	return nil
+}
+
+func (f *fakeClient) Refresh(context.Context) error {
+	f.calls = append(f.calls, "refresh")
+	if f.beforeRefresh != nil {
+		f.beforeRefresh()
+	}
+	if err := f.failOnce["refresh"]; err != nil {
+		delete(f.failOnce, "refresh")
+		return err
+	}
+	if err := f.fail["refresh"]; err != nil {
+		return err
+	}
+	if f.onRefresh != nil {
+		f.onRefresh()
+	}
 	return nil
 }
 

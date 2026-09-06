@@ -138,6 +138,28 @@ func TestCLIClientProbeDistinguishesUnavailableAndUnsupported(t *testing.T) {
 	}
 }
 
+func TestCLIClientProbeRejectsMissingManifestRefreshBeforeMutation(t *testing.T) {
+	runner := &fakeCommandRunner{available: true, errors: []error{errors.New("loadManifests is unavailable")}}
+	client := obsidian.NewCLIClient(obsidian.CLIConfig{
+		VaultPath: "/vault", Runner: runner,
+		Detector: staticDetector{status: obsidian.RuntimeStatus{Running: true, CLISupported: true, SafeToInvoke: true}},
+	})
+
+	err := client.Probe(context.Background())
+	if !errors.Is(err, obsidian.ErrCLIUnsupported) {
+		t.Fatalf("Probe error = %v, want unsupported runtime", err)
+	}
+	wantArgs := [][]string{{"vault", "info=path"}, {"eval", "code=await app.plugins.loadManifests();true"}}
+	if len(runner.commands) != len(wantArgs) {
+		t.Fatalf("commands = %+v", runner.commands)
+	}
+	for index, command := range runner.commands {
+		if !reflect.DeepEqual(command.Args, wantArgs[index]) {
+			t.Errorf("command %d args = %v, want %v", index, command.Args, wantArgs[index])
+		}
+	}
+}
+
 func TestCLIClientInspectsPluginThroughTargetedVault(t *testing.T) {
 	vault := t.TempDir()
 	runner := &fakeCommandRunner{
@@ -229,6 +251,9 @@ func TestCLIClientMapsPluginLifecycleCommandsWithoutShell(t *testing.T) {
 	if err := client.Unload(ctx, "sample"); err != nil {
 		t.Fatal(err)
 	}
+	if err := client.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if err := client.Reload(ctx, "sample"); err != nil {
 		t.Fatal(err)
 	}
@@ -239,6 +264,7 @@ func TestCLIClientMapsPluginLifecycleCommandsWithoutShell(t *testing.T) {
 	wantArgs := [][]string{
 		{"vault", "info=path"}, {"plugin:disable", "id=sample", "filter=community"},
 		{"vault", "info=path"}, {"eval", `code=await app.plugins.unloadPlugin("sample")`},
+		{"vault", "info=path"}, {"eval", "code=await app.plugins.loadManifests();true"},
 		{"vault", "info=path"}, {"plugin:reload", "id=sample"},
 		{"vault", "info=path"}, {"plugin:enable", "id=sample", "filter=community"},
 	}
@@ -255,6 +281,7 @@ func TestCLIClientMapsPluginLifecycleCommandsWithoutShell(t *testing.T) {
 func TestCLIClientRechecksRuntimeBeforeEveryCommand(t *testing.T) {
 	vault := t.TempDir()
 	runner := &fakeCommandRunner{available: true}
+	runner.outputs = []string{"=> true"}
 	detector := &sequenceDetector{statuses: []obsidian.RuntimeStatus{
 		{Running: true, CLISupported: true, SafeToInvoke: true},
 		{Running: false},
@@ -269,7 +296,7 @@ func TestCLIClientRechecksRuntimeBeforeEveryCommand(t *testing.T) {
 	if err := client.Disable(context.Background(), "sample"); !errors.Is(err, obsidian.ErrObsidianNotRunning) {
 		t.Fatalf("Disable error = %v", err)
 	}
-	if len(runner.commands) != 1 || !reflect.DeepEqual(runner.commands[0].Args, []string{"vault", "info=path"}) {
+	if len(runner.commands) != 2 || !reflect.DeepEqual(runner.commands[0].Args, []string{"vault", "info=path"}) || runner.commands[1].Args[0] != "eval" {
 		t.Fatalf("unexpected CLI invocation after Obsidian exited: %v", runner.commands)
 	}
 }

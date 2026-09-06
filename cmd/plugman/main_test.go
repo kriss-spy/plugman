@@ -31,6 +31,7 @@ func (f *cliTestLiveClient) Inspect(context.Context, string) (obsidian.PluginSta
 
 func (*cliTestLiveClient) Disable(context.Context, string) error { return nil }
 func (*cliTestLiveClient) Unload(context.Context, string) error  { return nil }
+func (*cliTestLiveClient) Refresh(context.Context) error         { return nil }
 func (*cliTestLiveClient) Reload(context.Context, string) error  { return nil }
 func (*cliTestLiveClient) Enable(context.Context, string) error  { return nil }
 

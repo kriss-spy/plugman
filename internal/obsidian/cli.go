@@ -82,10 +82,23 @@ func NewCLIClient(config CLIConfig) *CLIClient {
 	return &CLIClient{config: config}
 }
 
-// Probe first uses a non-launching process detector, then asks the already
-// running CLI which exact Vault the target working directory selected.
+// Probe verifies the already-running CLI selected the exact Vault and exposes
+// the private manifest-refresh capability required before live mutation.
 func (c *CLIClient) Probe(ctx context.Context) error {
-	return c.checkRuntime(ctx)
+	output, err := c.refreshManifests(ctx)
+	if err != nil {
+		for _, runtimeErr := range []error{ErrObsidianNotRunning, ErrObsidianOtherVault, ErrCLIUnavailable, ErrCLIUnsupported} {
+			if errors.Is(err, runtimeErr) {
+				return err
+			}
+		}
+		return fmt.Errorf("%w: probe plugin manifest refresh: %v", ErrCLIUnsupported, err)
+	}
+	var supported bool
+	if err := decodeEvalJSON(output, &supported); err != nil || !supported {
+		return fmt.Errorf("%w: plugin manifest refresh did not complete", ErrCLIUnsupported)
+	}
+	return nil
 }
 
 func (c *CLIClient) checkRuntime(ctx context.Context) error {
@@ -185,6 +198,15 @@ func (c *CLIClient) Unload(ctx context.Context, pluginID string) error {
 	}
 	_, err = c.run(ctx, "eval", "code=await app.plugins.unloadPlugin("+string(id)+")")
 	return err
+}
+
+func (c *CLIClient) Refresh(ctx context.Context) error {
+	_, err := c.refreshManifests(ctx)
+	return err
+}
+
+func (c *CLIClient) refreshManifests(ctx context.Context) (string, error) {
+	return c.run(ctx, "eval", "code=await app.plugins.loadManifests();true")
 }
 
 func (c *CLIClient) Reload(ctx context.Context, pluginID string) error {

@@ -15,6 +15,7 @@ type Client interface {
 	Inspect(context.Context, string) (PluginState, error)
 	Disable(context.Context, string) error
 	Unload(context.Context, string) error
+	Refresh(context.Context) error
 	Reload(context.Context, string) error
 	Enable(context.Context, string) error
 }
@@ -117,7 +118,6 @@ func (s *LiveSession) Prepare(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("inspect plugin runtime state: %w", err)
 	}
-	snapshot = s.normalizeInspect(snapshot)
 	if snapshot != s.plan.PlannedState {
 		return fmt.Errorf("plugin state changed before live replacement: %w", ErrStateChanged)
 	}
@@ -127,7 +127,6 @@ func (s *LiveSession) Prepare(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("recheck plugin runtime state: %w", err)
 	}
-	rechecked = s.normalizeInspect(rechecked)
 	if rechecked != snapshot {
 		return fmt.Errorf("plugin state changed during live replacement: %w", ErrStateChanged)
 	}
@@ -143,17 +142,6 @@ func (s *LiveSession) Prepare(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// normalizeInspect maps Obsidian's phantom "quiesced cache" state (a cached
-// manifest for a plugin whose files are gone) to absent when the plan expects
-// the plugin to be absent, so a fresh install is not mistaken for a concurrent
-// installation.
-func (s *LiveSession) normalizeInspect(state PluginState) PluginState {
-	if s.plan.PlannedState == (PluginState{}) && state.IsQuiescedCache() {
-		return PluginState{}
-	}
-	return state
 }
 
 // Commit reloads the replacement, restores the intended enabled state, and
@@ -173,8 +161,13 @@ func (s *LiveSession) Commit(ctx context.Context) error {
 		}
 		return nil
 	}
-	if err := s.client.Reload(ctx, s.plan.PluginID); err != nil {
-		return fmt.Errorf("reload plugin: %w", err)
+	if err := s.client.Refresh(ctx); err != nil {
+		return fmt.Errorf("refresh plugin manifests: %w", err)
+	}
+	if s.prior.Enabled {
+		if err := s.client.Reload(ctx, s.plan.PluginID); err != nil {
+			return fmt.Errorf("reload plugin: %w", err)
+		}
 	}
 	wantEnabled := s.prior.Enabled || (!s.prior.Present && s.plan.EnableNew)
 	if wantEnabled {
@@ -199,7 +192,12 @@ func (s *LiveSession) Rollback(ctx context.Context) error {
 	if !s.hasPrior || (!s.quiesceAttempted && !s.activationStarted) {
 		return nil
 	}
-	if s.prior.Present {
+	if s.activationStarted {
+		if err := s.client.Refresh(ctx); err != nil {
+			return fmt.Errorf("refresh restored plugin manifests: %w", err)
+		}
+	}
+	if s.prior.Loaded {
 		if err := s.client.Reload(ctx, s.plan.PluginID); err != nil {
 			return fmt.Errorf("reload restored plugin: %w", err)
 		}
