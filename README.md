@@ -29,6 +29,38 @@ To install without changing `PATH`, set `PLUGMAN_NO_MODIFY_PATH=1` before the
 macOS/Linux command. In PowerShell, run
 `$env:PLUGMAN_NO_MODIFY_PATH="1"` before the Windows command.
 
+## Uninstall
+
+Plugman has no uninstall command for itself; removing the executable and the
+user `PATH` entry is all that is required. Uninstalling Plugman never touches
+the plugins it manages inside a Vault; uninstall those from the Vault with
+`plugman uninstall <ids...>` or Obsidian itself first, if you want them gone.
+
+macOS or Linux (the default install directory is `~/.local/bin`):
+
+```sh
+rm ~/.local/bin/plugman
+```
+
+Then remove the `export PATH='...'` line the installer added to your shell
+profile (~/.zshrc, ~/.profile, or a fish `fish_add_path` line).
+
+Windows PowerShell (the default install directory is
+`%LOCALAPPDATA%\Programs\plugman\bin`):
+
+```powershell
+Remove-Item "$env:LOCALAPPDATA\Programs\plugman" -Recurse -Force
+```
+
+Then remove the `Plugman` directory from your user `PATH`
+(`System Properties > Environment Variables`, or
+`[Environment]::SetEnvironmentVariable` in PowerShell).
+
+If you installed with `go install`, uninstall with
+`go clean -i github.com/kriss-spy/plugman/cmd/plugman` and delete the binary
+from your `GOBIN`. To leave the executable in place but out of the shell
+`PATH`, only revert the `PATH` changes the installer made.
+
 ## Use
 
 Run Plugman from the root of the Vault you want to manage:
