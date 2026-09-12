@@ -139,9 +139,10 @@ func TestCLIClientProbeDistinguishesUnavailableAndUnsupported(t *testing.T) {
 }
 
 func TestCLIClientProbeRejectsMissingManifestRefreshBeforeMutation(t *testing.T) {
+	vault := t.TempDir()
 	runner := &fakeCommandRunner{available: true, errors: []error{errors.New("loadManifests is unavailable")}}
 	client := obsidian.NewCLIClient(obsidian.CLIConfig{
-		VaultPath: "/vault", Runner: runner,
+		VaultPath: vault, Runner: runner,
 		Detector: staticDetector{status: obsidian.RuntimeStatus{Running: true, CLISupported: true, SafeToInvoke: true}},
 	})
 
@@ -151,11 +152,14 @@ func TestCLIClientProbeRejectsMissingManifestRefreshBeforeMutation(t *testing.T)
 	}
 	wantArgs := [][]string{{"vault", "info=path"}, {"eval", "code=(async()=>{await app.plugins.loadManifests();return true})()"}}
 	if len(runner.commands) != len(wantArgs) {
-		t.Fatalf("commands = %+v", runner.commands)
+		t.Fatalf("commands = %+v, want %d commands", runner.commands, len(wantArgs))
 	}
 	for index, command := range runner.commands {
 		if !reflect.DeepEqual(command.Args, wantArgs[index]) {
 			t.Errorf("command %d args = %v, want %v", index, command.Args, wantArgs[index])
+		}
+		if command.Dir != vault {
+			t.Errorf("command %d Dir = %q, want %q", index, command.Dir, vault)
 		}
 	}
 }
