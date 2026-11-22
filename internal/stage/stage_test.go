@@ -36,6 +36,36 @@ func TestStageDownloadsAndValidatesReleaseAssets(t *testing.T) {
 	assertContents(t, filepath.Join(destination, "styles.css"), "body {}")
 }
 
+func TestDefaultDownloadClientHasFiniteTimeout(t *testing.T) {
+	client, ok := New(Config{}).client.(*http.Client)
+	if !ok || client.Timeout <= 0 {
+		t.Fatal("default release asset client must have a finite timeout")
+	}
+}
+
+func TestStageDoesNotDownloadBundledSettings(t *testing.T) {
+	server := assetServer(t, map[string]string{
+		"/manifest.json": `{"id":"demo","name":"Demo","version":"2.0.0","minAppVersion":"1.5.0"}`,
+		"/main.js":       "plugin code",
+		"/data.json":     `{"untrusted":true}`,
+	})
+	vault := testVault(t)
+	release := testRelease(server.URL, "demo", "2.0.0")
+	release.Assets.Styles = nil
+	destination := filepath.Join(vault, ".obsidian", ".plugman", "staging", "demo")
+	prepared, err := New(Config{Client: server.Client(), AllowedTestOrigins: []string{server.URL}}).Stage(context.Background(), Request{
+		VaultRoot: vault, Destination: destination, Release: release,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prepared.Cleanup()
+	entries, err := os.ReadDir(destination)
+	if err != nil || len(entries) != 2 || entries[0].Name() != "main.js" || entries[1].Name() != "manifest.json" {
+		t.Fatalf("staged files=%v error=%v", entries, err)
+	}
+}
+
 func TestStageRejectsManifestMismatchAndCleansPartialDestination(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -45,6 +75,8 @@ func TestStageRejectsManifestMismatchAndCleansPartialDestination(t *testing.T) {
 		{"id", `{"id":"other","name":"Other","version":"2.0.0","minAppVersion":"1.5.0"}`, "manifest id"},
 		{"version", `{"id":"demo","name":"Demo","version":"3.0.0","minAppVersion":"1.5.0"}`, "manifest version"},
 		{"minimum Obsidian version", `{"id":"demo","name":"Demo","version":"2.0.0","minAppVersion":"1.6.0"}`, "manifest minAppVersion"},
+		{"missing name", `{"id":"demo","version":"2.0.0","minAppVersion":"1.5.0"}`, "manifest name"},
+		{"empty name", `{"id":"demo","name":"","version":"2.0.0","minAppVersion":"1.5.0"}`, "manifest name"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

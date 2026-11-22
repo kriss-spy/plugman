@@ -273,6 +273,9 @@ func (e *Engine) replace(change PreparedChange, paths vaultPaths, prepared strin
 		}
 	}
 	if prepared != "" {
+		if err := os.MkdirAll(paths.plugins, 0o700); err != nil {
+			return fmt.Errorf("create Community Plugin directory: %w", err)
+		}
 		if err := os.Rename(prepared, paths.plugin); err != nil {
 			return fmt.Errorf("atomically install prepared plugin: %w", err)
 		}

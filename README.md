@@ -82,6 +82,19 @@ quiesce and reload plugins; closed-Vault operations do not require it.
 `GITHUB_TOKEN`) when resolving GitHub-only repositories to use authenticated
 GitHub API limits; Plugman never writes or prints the token.
 
+Before response headers arrive, GitHub metadata requests retry timeouts and
+interrupted connections up to three attempts. Errors while reading a response
+body fail immediately. Persistent failures report the affected host and a safe error category.
+Check network access and `HTTPS_PROXY` if resolution still fails. Certificate
+validation failures require fixing the local certificate or proxy configuration.
+Asset downloads stop after two minutes instead of waiting indefinitely.
+
+Plugman installs only `main.js`, `manifest.json`, and optional `styles.css`.
+It does not download bundled `data.json` settings. An existing settings-only
+plugin folder causes installation to fail before replacement. Updates preserve
+the installed plugin's `data.json`. See the
+[Obsidian 1.15.1 compatibility check](docs/obsidian-1.15.1.md) for details.
+
 ## Build locally
 
 Use the Go version declared in `go.mod`. A normal development build is:

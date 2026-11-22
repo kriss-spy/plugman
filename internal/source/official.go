@@ -426,12 +426,9 @@ func (r *OfficialResolver) getJSON(ctx context.Context, operation, endpoint stri
 		return malformed(operation, "invalid metadata URL", err)
 	}
 	request.Header.Set("Accept", "application/vnd.github+json, application/json")
-	response, err := r.client.Do(request)
+	response, err := getMetadata(r.client, request, operation)
 	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return &Error{Code: ErrorTransportFailure, Operation: operation, URL: endpoint, Message: "could not reach release service", Err: err}
+		return err
 	}
 	defer response.Body.Close()
 	if strings.Contains(operation, "release manifest") && response.Request != nil && response.Request.URL != nil && response.Request.URL.String() != endpoint {

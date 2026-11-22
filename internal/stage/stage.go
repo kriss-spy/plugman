@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kriss-spy/plugman/internal/source"
 )
@@ -68,7 +69,7 @@ type Stager struct {
 func New(config Config) *Stager {
 	client := config.Client
 	if client == nil {
-		client = &http.Client{CheckRedirect: func(request *http.Request, via []*http.Request) error {
+		client = &http.Client{Timeout: 2 * time.Minute, CheckRedirect: func(request *http.Request, via []*http.Request) error {
 			if len(via) == 0 || !isGitHubReleaseDownloadStart(via[0].URL) {
 				return nil
 			}
@@ -351,6 +352,9 @@ func validateDownloadedManifest(path string, release source.Release) error {
 	}
 	if manifest.MinAppVersion != release.MinimumObsidianVersion {
 		return fmt.Errorf("validate downloaded manifest: manifest minAppVersion %q does not match release minimum %q", manifest.MinAppVersion, release.MinimumObsidianVersion)
+	}
+	if manifest.Name == "" {
+		return errors.New("validate downloaded manifest: manifest name must be a non-empty string")
 	}
 	return nil
 }

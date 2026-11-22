@@ -51,6 +51,48 @@ func TestApplyInstallCanEnablePlugin(t *testing.T) {
 	assertManifestVersion(t, filepath.Join(vault, ".obsidian", "plugins", "demo"), "1.0.0")
 }
 
+func TestApplyFirstInstallCreatesPluginDirectory(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(map[bool]string{false: "success", true: "restoration"}[fail], func(t *testing.T) {
+			vault := newVault(t, nil)
+			plugins := filepath.Join(vault, ".obsidian", "plugins")
+			if err := os.Remove(plugins); err != nil {
+				t.Fatal(err)
+			}
+			stage := filepath.Join(vault, "download")
+			writePlugin(t, stage, "demo", "1.0.0", false)
+			prepared := PreparedChange{VaultRoot: vault, PluginID: "demo", Kind: Install, StagedDir: stage}
+			engine := New()
+			if err := engine.Validate(context.Background(), prepared); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(plugins); !os.IsNotExist(err) {
+				t.Fatalf("validation created plugin directory: %v", err)
+			}
+			failure := errors.New("failure after first installation")
+			if fail {
+				engine.afterReplacement = func() error { return failure }
+			}
+			outcome, err := engine.Apply(context.Background(), prepared)
+			if fail {
+				if !errors.Is(err, failure) || !outcome.Restored || outcome.Changed {
+					t.Fatalf("outcome=%+v error=%v", outcome, err)
+				}
+				if _, err := os.Stat(filepath.Join(plugins, "demo")); !os.IsNotExist(err) {
+					t.Fatalf("failed installation remains: %v", err)
+				}
+			} else {
+				if err != nil || !outcome.Changed || outcome.Restored {
+					t.Fatalf("outcome=%+v error=%v", outcome, err)
+				}
+				assertManifestVersion(t, filepath.Join(plugins, "demo"), "1.0.0")
+			}
+			assertEnabled(t, vault, []string{})
+			assertNoRecovery(t, vault)
+		})
+	}
+}
+
 func TestApplyPersistsGitHubSourceRecord(t *testing.T) {
 	vault := newVault(t, nil)
 	stage := filepath.Join(vault, "download")

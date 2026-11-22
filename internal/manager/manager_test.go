@@ -393,6 +393,37 @@ func TestInstallClassifiesInputErrorAsPreflightFailure(t *testing.T) {
 	}
 }
 
+func TestInstallRefusesToAdoptSettingsWithoutInstalledPlugin(t *testing.T) {
+	vaultRoot := newVault(t)
+	pluginRoot := filepath.Join(vaultRoot, ".obsidian", "plugins", "demo")
+	dataPath := filepath.Join(pluginRoot, "data.json")
+	writeFile(t, dataPath, `{"untrusted":true}`)
+	stager := &fakeStager{t: t}
+	report, err := manager.NewWithConfig(vaultRoot, manager.Config{
+		Official: &fakeOfficialResolver{release: officialRelease("demo", "1.0.0")}, Stager: stager,
+		LiveClient: &fakeLiveClient{probeErr: obsidian.ErrObsidianNotRunning},
+	}).Run(context.Background(), model.Operation{
+		Kind:    model.OperationInstall,
+		Install: model.InstallOptions{Inputs: []string{"demo"}, Enable: true, ObsidianVersion: "1.15.1"},
+	})
+	if err == nil || report.Category != model.ResultPreflightFailure {
+		t.Fatalf("report=%+v error=%v", report, err)
+	}
+	contents, readErr := os.ReadFile(dataPath)
+	if readErr != nil || string(contents) != `{"untrusted":true}` {
+		t.Fatalf("settings=%q error=%v", contents, readErr)
+	}
+	for _, path := range []string{
+		filepath.Join(pluginRoot, "main.js"),
+		filepath.Join(pluginRoot, "manifest.json"),
+		filepath.Join(vaultRoot, ".obsidian", ".plugman", "recovery", "current"),
+	} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatalf("preflight created %s: %v", path, err)
+		}
+	}
+}
+
 func TestInstallPreflightsCompleteBatchBeforeApplyingInDeclarationOrder(t *testing.T) {
 	vaultRoot := newVault(t)
 	stager := &fakeStager{t: t}

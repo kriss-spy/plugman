@@ -77,6 +77,37 @@ func TestGitHubResolverAcceptsManifestWithoutMinAppVersion(t *testing.T) {
 	}
 }
 
+func TestGitHubResolverRejectsNamelessManifest(t *testing.T) {
+	for _, manifest := range []string{
+		`{"id":"plugin","version":"1.0.0"}`,
+		`{"id":"plugin","name":"","version":"1.0.0"}`,
+	} {
+		doer := &recordingDoer{responses: map[string]fakeResponse{
+			"https://api.test/repos/acme/plugin":                                   {body: `{"full_name":"acme/plugin"}`},
+			"https://api.test/repos/acme/plugin/releases/tags/1.0.0":               {body: `{"tag_name":"1.0.0","html_url":"https://github.com/acme/plugin/releases/tag/1.0.0","assets":[{"name":"manifest.json","browser_download_url":"https://github.com/acme/plugin/releases/download/1.0.0/manifest.json"},{"name":"main.js","browser_download_url":"https://github.com/acme/plugin/releases/download/1.0.0/main.js"}]}`},
+			"https://github.com/acme/plugin/releases/download/1.0.0/manifest.json": {body: manifest},
+		}}
+		_, _, err := newGitHubTestResolver(doer).Resolve(context.Background(), "https://github.com/acme/plugin/releases/tag/1.0.0", Target{ObsidianVersion: "1.15.1"})
+		assertSourceError(t, err, ErrorMalformedMetadata, 0)
+		if !strings.Contains(err.Error(), "name") {
+			t.Fatalf("expected missing name diagnostic, got %v", err)
+		}
+		assertNeverDownloadedPluginCode(t, doer.requests)
+	}
+}
+
+func TestReleaseAssetsExcludeBundledSettings(t *testing.T) {
+	assets, err := requiredAssets([]githubAsset{
+		{Name: "manifest.json", URL: "manifest"},
+		{Name: "main.js", URL: "main"},
+		{Name: "data.json", URL: "settings"},
+		{Name: "data.json.bak", URL: "saved-settings"},
+	})
+	if err != nil || assets.Manifest.URL != "manifest" || assets.MainJS.URL != "main" || assets.Styles != nil {
+		t.Fatalf("release assets=%+v error=%v", assets, err)
+	}
+}
+
 func TestGitHubResolverRejectsMalformedInputsAndReleases(t *testing.T) {
 	t.Parallel()
 
